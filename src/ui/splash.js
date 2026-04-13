@@ -11,7 +11,21 @@ export const success = chalk.hex('#4CAF50');
 export const warning = chalk.hex('#FF6B35');
 export const error = chalk.hex('#E53935');
 
-export const SEP = chalk.hex('#F5A623')('── ' .repeat(20));
+const GROUND = ` ██████╗ ██████╗  ██████╗ ██╗   ██╗███╗   ██╗██████╗ 
+██╔════╝ ██╔══██╗██╔═══██╗██║   ██║████╗  ██║██╔══██╗
+██║  ███╗██████╔╝██║   ██║██║   ██║██╔██╗ ██║██║  ██║
+██║   ██║██╔══██╗██║   ██║██║   ██║██║╚██╗██║██║  ██║
+╚██████╔╝██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║██████╔╝
+ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝╚═════╝ `;
+
+const UP = `                                               ██╗   ██╗██████╗ 
+                                               ██║   ██║██╔══██╗
+                                               ██║   ██║██████╔╝
+                                               ██║   ██║██╔═══╝ 
+                                               ╚██████╔╝██║     
+                                                ╚═════╝ ╚═╝     `;
+
+export const SEP = chalk.hex('#F5A623')('── '.repeat(20));
 
 export function sep() {
   console.log(SEP);
@@ -40,10 +54,11 @@ export function hint(text) {
 
 export function showSplash() {
   console.clear();
-  console.log('');
-  console.log(chalk.hex('#F5A623').bold('  ■ GROUNDUP'));
-  console.log(chalk.hex('#F5A623')('── '.repeat(20)));
-  console.log(chalk.white('  build from nothing.') + '  ' + chalk.hex('#666666')(`v${version}`));
-  console.log(chalk.hex('#F5A623')('── '.repeat(20)));
-  console.log('');
+  console.log(chalk.hex('#F5A623')(GROUND));
+  console.log(chalk.whiteBright(UP));
+  line();
+  console.log(chalk.hex('#666666')('  build from nothing.') + '  ' + chalk.hex('#666666')(`v${version}`));
+  line();
+  console.log(SEP);
+  line();
 }
