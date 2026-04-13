@@ -4,7 +4,7 @@
   "description": "Build from nothing. A global CLI that takes you from empty folder to scaffolded project.",
   "type": "module",
   "bin": {
-    "groundup": "./bin/groundup.js"
+    "groundup": "bin/groundup.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
