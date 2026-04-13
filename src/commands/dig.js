@@ -1,13 +1,64 @@
-import { showSplash, line, amber, white, muted } from '../ui/splash.js';
+import { showSplash, line, amber, white, muted, sep } from '../ui/splash.js';
 import { sessionExists, loadSession, saveSession, updateSession } from '../session/state.js';
 import { runInterview } from '../interview/engine.js';
 import { runAgentSelection } from './agent.js';
 import { runStackSelection } from '../stack/selection.js';
 import { runBlueprint } from './blueprint.js';
+import { runRepoSetup } from './repo.js';
+import { askSelect, askText } from '../ui/input.js';
+import fs from 'fs';
+import path from 'path';
 
 export async function dig(name) {
   showSplash();
 
+  const projectName = name ?? 'unnamed';
+
+  // --- directory setup ---
+  const cwd = process.cwd();
+  const suggestedDir = path.join(cwd, projectName);
+
+  console.log(amber('■ ') + white(`Starting: ${projectName}`));
+  line();
+
+  const dirChoice = await askSelect(
+    'Where should we create this project?',
+    [
+      { value: 'new', label: `Create ./${projectName}/`, hint: 'recommended' },
+      { value: 'here', label: 'Use current directory', hint: cwd },
+      { value: 'custom', label: 'Choose a different path' },
+    ],
+    'new'
+  );
+
+  sep();
+  line();
+
+  let projectDir = cwd;
+
+  if (dirChoice === 'new') {
+    projectDir = suggestedDir;
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
+    }
+  } else if (dirChoice === 'custom') {
+    const customPath = await askText(
+      'Enter the path:',
+      'e.g. ~/Projects/my-app',
+      true
+    );
+    projectDir = path.resolve(customPath.replace('~', process.env.HOME));
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
+    }
+    sep();
+    line();
+  }
+
+  // move into project directory
+  process.chdir(projectDir);
+
+  // check for existing session in this directory
   if (sessionExists()) {
     const session = loadSession();
     console.log(amber('■ ') + white(`Session found: ${session.project.name}`));
@@ -19,17 +70,17 @@ export async function dig(name) {
     return;
   }
 
-  const projectName = name ?? 'unnamed';
-
   saveSession({
     project: {
       name: projectName,
+      dir: projectDir,
       created: new Date().toISOString(),
     },
     phase: 'interview',
   });
 
-  console.log(amber('■ ') + white(`Starting: ${projectName}`));
+  console.log(muted(`  Project directory: ${projectDir}`));
+  line();
 
   let session = loadSession();
 
@@ -49,4 +100,8 @@ export async function dig(name) {
   // phase 4 — blueprint
   session = loadSession();
   await runBlueprint(session);
+
+  // phase 5 — repo setup
+  session = loadSession();
+  await runRepoSetup(session);
 }
