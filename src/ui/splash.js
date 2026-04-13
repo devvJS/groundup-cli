@@ -29,10 +29,10 @@ const UP = `                                               ██╗   ██╗
 
 export function sep() {
   const cols = process.stdout.columns || 80;
-  console.log(muted(('◼' + '\u2009').repeat(Math.floor(cols / 1.5))));
+  console.log(muted(('◼' + '\u2009').repeat(Math.floor(cols / 2))));
 }
 
-export const SEP = muted(('◼' + '\u2009').repeat(Math.floor((process.stdout.columns || 80) / 1.5)));
+export const SEP = muted(('◼' + '\u2009').repeat(Math.floor((process.stdout.columns || 80) / 2)));
 
 export function line() {
   console.log('');
