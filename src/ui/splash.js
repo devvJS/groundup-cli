@@ -69,12 +69,18 @@ export function showSplash() {
     return ' '.repeat(left) + text + ' '.repeat(right);
   };
   const blankInterior = edge + ' '.repeat(interiorWidth) + edge;
+  const dedent = (lines) => {
+    const min = Math.min(...lines.map((l) => (l.match(/^ */) || [''])[0].length));
+    return lines.map((l) => l.slice(min));
+  };
+  const groundLines = dedent(GROUND.split('\n'));
+  const upLines = dedent(UP.split('\n'));
 
   console.log(amber('╔' + '═'.repeat(interiorWidth) + '╗'));
   console.log(blankInterior);
   console.log(blankInterior);
-  GROUND.split('\n').forEach((l) => console.log(edge + amber(centerLine(l)) + edge));
-  UP.split('\n').forEach((l) => console.log(edge + chalk.whiteBright(centerLine(l)) + edge));
+  groundLines.forEach((l) => console.log(edge + amber(centerLine(l)) + edge));
+  upLines.forEach((l) => console.log(edge + chalk.whiteBright(centerLine(l)) + edge));
   console.log(blankInterior);
   console.log(blankInterior);
   console.log(amber('╚' + '═'.repeat(interiorWidth) + '╝'));
