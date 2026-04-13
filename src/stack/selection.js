@@ -1,37 +1,31 @@
-import * as clack from '@clack/prompts';
-import chalk from 'chalk';
 import { getRecommendations } from './recommend.js';
 import { updateSession } from '../session/state.js';
-import { showKeyboardHints } from '../ui/prompts.js';
-
-const amber = chalk.hex('#F5A623');
-const muted = chalk.hex('#666666');
-const success = chalk.hex('#4CAF50');
+import { sep, line, header, confirm, success, flag, amber, white, muted } from '../ui/splash.js';
+import { askSelect } from '../ui/input.js';
 
 async function selectLayer(layerName, config) {
-  console.log('');
-  console.log(amber(`  ■ ${layerName.toUpperCase()}`));
-  console.log(muted(`  ${config.reason}`));
-
-  showKeyboardHints(false);
+  line();
+  flag(layerName.toUpperCase());
+  console.log(muted('  ' + config.reason));
+  line();
 
   const options = config.options.map((o) => ({
     ...o,
     label: o.value === config.recommended
-      ? o.label + chalk.hex('#F5A623')(' ★')
+      ? o.label + amber(' ★')
       : o.label,
   }));
 
-  const selected = await clack.select({
-    message: `Choose your ${layerName}:`,
+  const selected = await askSelect(
+    `Choose your ${layerName}:`,
     options,
-    initialValue: config.recommended,
-  });
+    config.recommended
+  );
 
-  if (clack.isCancel(selected)) {
-    clack.cancel(amber('■ ') + 'Session saved. Run ' + chalk.white('groundup continue') + ' to pick up where you left off.');
-    process.exit(0);
-  }
+  sep();
+  line();
+  confirm(`${layerName}: ${selected}`);
+  line();
 
   return selected;
 }
@@ -40,17 +34,18 @@ export async function runStackSelection(session) {
   const { interview, agent } = session;
   const recommendations = getRecommendations(interview, agent);
 
-  clack.intro(amber('■ groundup — stack'));
+  header(session.project.name, 'stack');
 
-  console.log(muted('  These are your decisions. I\'ll recommend with reasoning.'));
+  console.log(white('These are your decisions. I\'ll recommend with reasoning.'));
   console.log(muted('  ★ = recommended for your project.'));
+  line();
 
   const stack = session.stack ?? {};
   const layers = Object.keys(recommendations);
 
   for (const layer of layers) {
     if (stack[layer]) {
-      console.log(success(`  ✓ ${layer}: ${stack[layer]}`));
+      confirm(`${layer}: ${stack[layer]}`);
       continue;
     }
 
@@ -59,7 +54,11 @@ export async function runStackSelection(session) {
     updateSession({ stack });
   }
 
-  clack.outro(success('✓ Stack locked.'));
+  line();
+  console.log(success('✓ ') + white('Stack locked.'));
+  line();
+  sep();
+  line();
 
   return stack;
 }

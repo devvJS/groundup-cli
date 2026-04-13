@@ -1,64 +1,45 @@
-import * as clack from '@clack/prompts';
-import chalk from 'chalk';
 import { questions } from './questions.js';
 import { updateSession } from '../session/state.js';
-
-const amber = chalk.hex('#F5A623');
-const muted = chalk.hex('#666666');
-const success = chalk.hex('#4CAF50');
+import { sep, line, header, confirm, success, white } from '../ui/splash.js';
+import { askText, askSelect } from '../ui/input.js';
 
 export async function runInterview(session) {
   const answers = session.interview ?? {};
+  const projectName = session.project.name;
 
-  clack.intro(amber('■ groundup — interview'));
+  header(projectName, 'interview');
 
   for (const question of questions) {
-    // check conditional — skip if when() returns false
     if (question.when && !question.when(answers)) {
       continue;
     }
 
-    // skip already answered questions on resume
     if (answers[question.id] !== undefined) {
-      console.log(muted(`  ✓ ${question.id}: ${answers[question.id]}`));
+      confirm(`${question.id}: ${answers[question.id]}`);
       continue;
     }
 
     let answer;
 
     if (question.type === 'text') {
-      answer = await clack.text({
-        message: question.message,
-        placeholder: question.placeholder,
-        validate: (val) => {
-          if (question.required && !val.trim()) {
-            return 'This one matters — take a shot at it.';
-          }
-        },
-      });
+      answer = await askText(question.message, question.placeholder, question.required);
     }
 
     if (question.type === 'select') {
-      answer = await clack.select({
-        message: question.message,
-        options: question.options,
-      });
-    }
-
-    // handle ctrl+c
-    if (clack.isCancel(answer)) {
-      clack.cancel(amber('■ ') + 'Session saved. Run ' + chalk.white('groundup continue') + ' to pick up where you left off.');
-      process.exit(0);
+      answer = await askSelect(question.message, question.options);
     }
 
     answers[question.id] = answer;
-
-    // save after every answer
     updateSession({ interview: answers });
+
+    sep();
+    line();
   }
 
-  const answered = Object.keys(answers).length;
-  clack.outro(success(`✓ Interview complete. ${answered} questions answered.`));
+  console.log(success('✓ ') + white(`Interview complete. ${Object.keys(answers).length} questions answered.`));
+  line();
+  sep();
+  line();
 
   return answers;
 }

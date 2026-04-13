@@ -1,24 +1,21 @@
-import { showSplash } from '../ui/splash.js';
+import { showSplash, line, amber, white, muted } from '../ui/splash.js';
 import { sessionExists, loadSession, saveSession, updateSession } from '../session/state.js';
 import { runInterview } from '../interview/engine.js';
 import { runAgentSelection } from './agent.js';
 import { runStackSelection } from '../stack/selection.js';
-import chalk from 'chalk';
-
-const amber = chalk.hex('#F5A623');
-const muted = chalk.hex('#666666');
+import { runBlueprint } from './blueprint.js';
 
 export async function dig(name) {
   showSplash();
 
   if (sessionExists()) {
     const session = loadSession();
-    console.log(amber('  ■ ') + chalk.white(`Session found: ${session.project.name}`));
+    console.log(amber('■ ') + white(`Session found: ${session.project.name}`));
     console.log(muted(`  Last updated: ${session.project.lastUpdated}`));
-    console.log('');
-    console.log(muted('  Run ') + chalk.white('groundup continue') + muted(' to resume.'));
-    console.log(muted('  Run ') + chalk.white('groundup site-clear') + muted(' to start fresh.'));
-    console.log('');
+    line();
+    console.log(muted('  Run ') + white('groundup continue') + muted(' to resume.'));
+    console.log(muted('  Run ') + white('groundup site-clear') + muted(' to start fresh.'));
+    line();
     return;
   }
 
@@ -32,8 +29,7 @@ export async function dig(name) {
     phase: 'interview',
   });
 
-  console.log(amber('  ■ ') + chalk.white(`Starting: ${projectName}`));
-  console.log('');
+  console.log(amber('■ ') + white(`Starting: ${projectName}`));
 
   let session = loadSession();
 
@@ -47,9 +43,10 @@ export async function dig(name) {
 
   // phase 3 — stack selection
   session = loadSession();
-  const stack = await runStackSelection(session);
-  updateSession({ phase: 'blueprint', stack });
+  await runStackSelection(session);
+  updateSession({ phase: 'blueprint' });
 
-  console.log('');
-  console.log(muted('  Generating BLUEPRINT.md...'));
+  // phase 4 — blueprint
+  session = loadSession();
+  await runBlueprint(session);
 }

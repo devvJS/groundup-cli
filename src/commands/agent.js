@@ -1,36 +1,23 @@
-import * as clack from '@clack/prompts';
-import chalk from 'chalk';
 import { agents } from '../interview/agents.js';
 import { updateSession } from '../session/state.js';
-import { showKeyboardHints } from '../ui/prompts.js';
-
-const amber = chalk.hex('#F5A623');
-const muted = chalk.hex('#666666');
-const success = chalk.hex('#4CAF50');
+import { sep, line, header, confirm, success, amber, white, muted } from '../ui/splash.js';
+import { askMultiselect } from '../ui/input.js';
 
 export async function runAgentSelection(session) {
-  clack.intro(amber('■ groundup — agent'));
+  header(session.project.name, 'agent');
 
-  console.log(muted('  groundup is agent-agnostic. Pick what you\'re building with.'));
-  console.log(muted('  This determines your context file and MCP availability.'));
+  console.log(white('groundup is agent-agnostic. Pick what you\'re building with.'));
   console.log(muted('  Select all that apply to your workflow.'));
+  line();
 
-  showKeyboardHints(true);
-
-  const selected = await clack.multiselect({
-    message: 'What AI are you building with?',
-    options: agents.map((a) => ({
+  const selected = await askMultiselect(
+    'What AI are you building with?',
+    agents.map((a) => ({
       value: a.value,
       label: a.label,
       hint: a.hint,
-    })),
-    required: true,
-  });
-
-  if (clack.isCancel(selected)) {
-    clack.cancel(amber('■ ') + 'Session saved. Run ' + chalk.white('groundup continue') + ' to pick up where you left off.');
-    process.exit(0);
-  }
+    }))
+  );
 
   const primary = agents.find((a) => a.value === selected[0]);
   const mcpEnabled = selected.includes('claude');
@@ -49,17 +36,19 @@ export async function runAgentSelection(session) {
     phase: 'stack',
   });
 
-  console.log('');
-  console.log(success('  ✓ ') + chalk.white(`Primary: ${primary.label}`));
+  sep();
+  line();
+  confirm(`Primary: ${primary.label}`);
   if (selected.length > 1) {
     console.log(muted(`  + ${selected.slice(1).join(', ')}`));
   }
   console.log(muted(`  Context files: ${contextFiles.join(', ')}`));
   if (mcpEnabled) {
-    console.log(amber('  ■ ') + muted('MCP integration enabled'));
+    console.log(amber('■ ') + muted('MCP integration enabled'));
   }
-
-  clack.outro(success('✓ Agent selection complete.'));
+  line();
+  sep();
+  line();
 
   return { primary: selected[0], all: selected, contextFiles, mcpEnabled };
 }
