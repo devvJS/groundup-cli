@@ -57,11 +57,12 @@ export function hint(text) {
 
 export function showSplash() {
   console.clear();
+  sep();
+  line();
   console.log(amber(GROUND));
   console.log(chalk.whiteBright(UP));
   line();
-  sep();
-  line();
   console.log('  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`));
   line();
+  sep();
 }
