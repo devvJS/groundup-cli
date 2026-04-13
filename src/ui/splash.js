@@ -63,20 +63,23 @@ export function showSplash() {
   const interiorWidth = Math.max(0, cols - 2);
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
   const edge = amber('║');
-  const centerLine = (text) => {
-    const visible = stripAnsi(text).length;
-    const pad = Math.max(0, interiorWidth - visible);
-    const left = Math.floor(pad / 2);
-    const right = pad - left;
-    return ' '.repeat(left) + text + ' '.repeat(right);
-  };
   const blankInterior = edge + ' '.repeat(interiorWidth) + edge;
+  const groundLines = GROUND.split('\n');
+  const upLines = UP.split('\n');
+  const combined = [...groundLines, ...upLines];
+  const maxWidth = Math.max(...combined.map((l) => stripAnsi(l).length));
+  const leftPad = Math.max(0, Math.floor((interiorWidth - maxWidth) / 2));
+  const padLine = (text, paint) => {
+    const visible = stripAnsi(text).length;
+    const rightPad = Math.max(0, interiorWidth - leftPad - visible);
+    return edge + ' '.repeat(leftPad) + paint(text) + ' '.repeat(rightPad) + edge;
+  };
 
   console.log(amber('╔' + '═'.repeat(interiorWidth) + '╗'));
   console.log(blankInterior);
   console.log(blankInterior);
-  GROUND.split('\n').forEach((l) => console.log(edge + amber(centerLine(l)) + edge));
-  UP.split('\n').forEach((l) => console.log(edge + chalk.whiteBright(centerLine(l)) + edge));
+  groundLines.forEach((l) => console.log(padLine(l, amber)));
+  upLines.forEach((l) => console.log(padLine(l, chalk.whiteBright)));
   console.log(blankInterior);
   console.log(blankInterior);
   console.log(amber('╚' + '═'.repeat(interiorWidth) + '╝'));
