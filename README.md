@@ -11,7 +11,14 @@ A global CLI tool that takes a developer from an empty folder to a fully scaffol
 ## Install
 
 ```bash
-npm install -g groundup-cli
+# from npm (recommended)
+npm install -g groundup-cli@beta
+
+# from source
+git clone https://github.com/devvJS/groundup-cli
+cd groundup-cli
+npm install
+npm link
 ```
 
 ## Usage
