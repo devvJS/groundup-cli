@@ -58,10 +58,9 @@ export function hint(text) {
 export function showSplash() {
   console.clear();
   const cols = process.stdout.columns || 80;
-  const interiorWidth = Math.max(0, cols - 6);
+  const interiorWidth = Math.max(0, cols - 2);
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
-  const leftEdge = muted('◼  ');
-  const rightEdge = muted('  ◼');
+  const edge = amber('║');
   const centerLine = (text) => {
     const visible = stripAnsi(text).length;
     const pad = Math.max(0, interiorWidth - visible);
@@ -69,16 +68,16 @@ export function showSplash() {
     const right = pad - left;
     return ' '.repeat(left) + text + ' '.repeat(right);
   };
-  const blankInterior = leftEdge + ' '.repeat(interiorWidth) + rightEdge;
+  const blankInterior = edge + ' '.repeat(interiorWidth) + edge;
 
-  sep();
+  console.log(amber('╔' + '═'.repeat(interiorWidth) + '╗'));
   console.log(blankInterior);
   console.log(blankInterior);
-  GROUND.split('\n').forEach((l) => console.log(leftEdge + amber(centerLine(l)) + rightEdge));
-  UP.split('\n').forEach((l) => console.log(leftEdge + chalk.whiteBright(centerLine(l)) + rightEdge));
+  GROUND.split('\n').forEach((l) => console.log(edge + amber(centerLine(l)) + edge));
+  UP.split('\n').forEach((l) => console.log(edge + chalk.whiteBright(centerLine(l)) + edge));
   console.log(blankInterior);
   console.log(blankInterior);
-  sep();
+  console.log(amber('╚' + '═'.repeat(interiorWidth) + '╝'));
   line();
   console.log('  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`));
   line();
