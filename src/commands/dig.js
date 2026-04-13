@@ -1,10 +1,11 @@
 import { showSplash, line, amber, white, muted, sep } from '../ui/splash.js';
-import { sessionExists, loadSession, saveSession, updateSession } from '../session/state.js';
+import { sessionExists, loadSession, saveSession, updateSession, clearSession } from '../session/state.js';
 import { runInterview } from '../interview/engine.js';
 import { runAgentSelection } from './agent.js';
 import { runStackSelection } from '../stack/selection.js';
 import { runBlueprint } from './blueprint.js';
 import { runRepoSetup } from './repo.js';
+import { resume } from './continue.js';
 import { askSelect, askText } from '../ui/input.js';
 import fs from 'fs';
 import path from 'path';
@@ -60,14 +61,34 @@ export async function dig(name) {
 
   // check for existing session in this directory
   if (sessionExists()) {
-    const session = loadSession();
-    console.log(amber('■ ') + white(`Session found: ${session.project.name}`));
-    console.log(muted(`  Last updated: ${session.project.lastUpdated}`));
+    const existing = loadSession();
+    console.log(amber('■ ') + white(`Session found: ${existing.project.name}`));
+    console.log(muted(`  Last updated: ${existing.project.lastUpdated}`));
     line();
-    console.log(muted('  Run ') + white('groundup continue') + muted(' to resume.'));
-    console.log(muted('  Run ') + white('groundup site-clear') + muted(' to start fresh.'));
+
+    const resumeChoice = await askSelect(
+      `A session for ${existing.project.name} already exists. Resume it or start fresh?`,
+      [
+        { value: 'resume', label: 'Resume', hint: 'run groundup continue' },
+        { value: 'fresh', label: 'Start fresh', hint: 'discard and begin new session' },
+        { value: 'quit', label: 'Quit' },
+      ],
+      'resume'
+    );
+
+    sep();
     line();
-    return;
+
+    if (resumeChoice === 'resume') {
+      await resume();
+      return;
+    }
+    if (resumeChoice === 'quit') {
+      return;
+    }
+    clearSession();
+    console.log(muted('  Previous session discarded. Starting fresh.'));
+    line();
   }
 
   saveSession({
