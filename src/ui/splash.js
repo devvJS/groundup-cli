@@ -1,8 +1,10 @@
 import chalk from 'chalk';
-import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const require = createRequire(import.meta.url);
-const { version } = require('../../package.json');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const { version } = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'));
 
 export const amber = chalk.hex('#F5A623');
 export const white = chalk.white;
@@ -11,54 +13,57 @@ export const success = chalk.hex('#4CAF50');
 export const warning = chalk.hex('#FF6B35');
 export const error = chalk.hex('#E53935');
 
-const GROUND = ` ██████╗ ██████╗  ██████╗ ██╗   ██╗███╗   ██╗██████╗ 
+const GROUND = ` ██████╗ ██████╗  ██████╗ ██╗   ██╗███╗   ██╗██████╗
 ██╔════╝ ██╔══██╗██╔═══██╗██║   ██║████╗  ██║██╔══██╗
 ██║  ███╗██████╔╝██║   ██║██║   ██║██╔██╗ ██║██║  ██║
 ██║   ██║██╔══██╗██║   ██║██║   ██║██║╚██╗██║██║  ██║
 ╚██████╔╝██║  ██║╚██████╔╝╚██████╔╝██║ ╚████║██████╔╝
  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝╚═════╝ `;
 
-const UP = `                                               ██╗   ██╗██████╗ 
+const UP = `                                               ██╗   ██╗██████╗
                                                ██║   ██║██╔══██╗
                                                ██║   ██║██████╔╝
-                                               ██║   ██║██╔═══╝ 
-                                               ╚██████╔╝██║     
+                                               ██║   ██║██╔═══╝
+                                               ╚██████╔╝██║
                                                 ╚═════╝ ╚═╝     `;
 
-export const SEP = chalk.hex('#F5A623')('── '.repeat(20));
-
 export function sep() {
-  console.log(SEP);
+  const cols = process.stdout.columns || 80;
+  console.log(muted('▪ '.repeat(Math.floor(cols / 2))));
 }
+
+export const SEP = muted('▪ '.repeat(Math.floor((process.stdout.columns || 80) / 2)));
 
 export function line() {
   console.log('');
 }
 
 export function header(project, phase) {
-  console.log(chalk.hex('#F5A623')('■ ') + chalk.white(`groundup — ${project} — ${phase}`));
+  console.log(amber('■ ') + white(`groundup — ${project} — ${phase}`));
   console.log('');
 }
 
 export function confirm(text) {
-  console.log(chalk.hex('#4CAF50')('✓ ') + chalk.white(text));
+  console.log(success('✓ ') + white(text));
 }
 
 export function flag(text) {
-  console.log(chalk.hex('#F5A623')('■ ') + chalk.white(text));
+  console.log(amber('■ ') + white(text));
 }
 
 export function hint(text) {
-  console.log(chalk.hex('#666666')('  ' + text));
+  console.log(muted('  ' + text));
 }
 
 export function showSplash() {
   console.clear();
-  console.log(chalk.hex('#F5A623')(GROUND));
+  console.log(amber(GROUND));
   console.log(chalk.whiteBright(UP));
   line();
-  console.log(chalk.hex('#666666')('  build from nothing.') + '  ' + chalk.hex('#666666')(`v${version}`));
+  console.log('  ' + white('build from nothing. ') + amber('■'));
   line();
-  console.log(SEP);
+  sep();
+  line();
+  console.log('  ' + muted(`v${version}`));
   line();
 }
