@@ -1,6 +1,6 @@
 {
   "name": "groundup-cli",
-  "version": "1.0.0",
+  "version": "0.1.0-beta.1",
   "description": "Build from nothing. A global CLI that takes you from empty folder to scaffolded project.",
   "type": "module",
   "bin": {
@@ -9,7 +9,12 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["cli", "scaffold", "developer-tools", "ai"],
+  "keywords": [
+    "cli",
+    "scaffold",
+    "developer-tools",
+    "ai"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
