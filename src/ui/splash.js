@@ -60,10 +60,8 @@ export function showSplash() {
   console.log(amber(GROUND));
   console.log(chalk.whiteBright(UP));
   line();
-  console.log('  ' + white('build from nothing. ') + amber('■'));
-  line();
   sep();
   line();
-  console.log('  ' + muted(`v${version}`));
+  console.log('  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`));
   line();
 }
