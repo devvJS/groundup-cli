@@ -31,10 +31,10 @@ const UP = `
 
 export function sep() {
   const cols = process.stdout.columns || 80;
-  console.log(muted(('◼' + '\u2009').repeat(Math.floor(cols / 2))));
+  console.log(muted('═'.repeat(cols)));
 }
 
-export const SEP = muted(('◼' + '\u2009').repeat(Math.floor((process.stdout.columns || 80) / 2)));
+export const SEP = muted('═'.repeat(process.stdout.columns || 80));
 
 export function line() {
   console.log('');
@@ -75,16 +75,18 @@ export function showSplash() {
     return edge + ' '.repeat(leftPad) + paint(text) + ' '.repeat(rightPad) + edge;
   };
 
+  const taglineVisible = `  build from nothing. ■  v${version}`;
+  const taglineContent = '  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`);
+  const taglineRightPad = Math.max(0, interiorWidth - taglineVisible.length);
+  const taglineInterior = edge + taglineContent + ' '.repeat(taglineRightPad) + edge;
+
   console.log(amber('╔' + '═'.repeat(interiorWidth) + '╗'));
   console.log(blankInterior);
   console.log(blankInterior);
   groundLines.forEach((l) => console.log(padLine(l, amber)));
   upLines.forEach((l) => console.log(padLine(l, chalk.whiteBright)));
   console.log(blankInterior);
-  console.log(blankInterior);
+  console.log(taglineInterior);
   console.log(amber('╚' + '═'.repeat(interiorWidth) + '╝'));
   line();
-  console.log('  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`));
-  line();
-  sep();
 }
