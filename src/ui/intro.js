@@ -23,72 +23,79 @@ const GETS = [
   'a scaffolded project you fully own — every file in plain sight',
 ];
 
-export function hasSeenIntro() {
-  return getFlag('seenIntro') === true;
+export function hasSeenWelcome() {
+  return getFlag('seenWelcome') === true;
 }
 
-export function markIntroSeen() {
-  setFlag('seenIntro', true);
+export function markWelcomeSeen() {
+  setFlag('seenWelcome', true);
 }
 
-export function showIntro() {
+// renderWelcomeBody — prints the welcome content without clearing the
+// screen or waiting for input. Callers compose it with splash + keywait
+// however they want.
+export function renderWelcomeBody() {
+  sep();
+  console.log(amber('■ ') + white('welcome to groundup'));
+  sep();
+  line();
+  console.log(muted('  a global cli that walks you from an empty folder to a scaffolded,'));
+  console.log(muted('  git-ready project — no assumptions, no lock-in.'));
+  line();
+
+  sep();
+  console.log(amber('■ ') + white('how it works'));
+  sep();
+  line();
+  for (const s of STEPS) console.log('  ' + muted(s));
+  line();
+
+  sep();
+  console.log(amber('■ ') + white('what you\'ll need'));
+  sep();
+  line();
+  for (const n of NEEDS) console.log('  ' + muted('· ') + white(n));
+  line();
+
+  sep();
+  console.log(amber('■ ') + white('what you get'));
+  sep();
+  line();
+  for (const g of GETS) console.log('  ' + muted('· ') + white(g));
+  line();
+
+  sep();
+  console.log(amber('■ ') + white('no lock-in'));
+  sep();
+  line();
+  console.log('  ' + muted('every file groundup writes is plain text you own. no hidden config,'));
+  console.log('  ' + muted('no runtime dependency on groundup itself. walk away any time.'));
+  line();
+
+  sep();
+  console.log(amber('■ ') + white('commands'));
+  sep();
+  line();
+  renderCommandsList();
+  line();
+
+  sep();
+  console.log('  ' + muted('press any key to start'));
+  sep();
+}
+
+export function waitForAnyKey() {
   return new Promise((resolve) => {
-    process.stdout.write('\x1B[2J\x1B[H');
-    sep();
-    console.log(amber('■ ') + white('welcome to groundup'));
-    sep();
-    line();
-    console.log(muted('  build from nothing. a global cli that walks you from an empty folder'));
-    console.log(muted('  to a scaffolded project — no assumptions, no lock-in.'));
-    line();
-
-    sep();
-    console.log(amber('■ ') + white('how it works'));
-    sep();
-    line();
-    for (const s of STEPS) console.log('  ' + muted(s));
-    line();
-
-    sep();
-    console.log(amber('■ ') + white('what you\'ll need'));
-    sep();
-    line();
-    for (const n of NEEDS) console.log('  ' + muted('· ') + white(n));
-    line();
-
-    sep();
-    console.log(amber('■ ') + white('what you get'));
-    sep();
-    line();
-    for (const g of GETS) console.log('  ' + muted('· ') + white(g));
-    line();
-
-    sep();
-    console.log(amber('■ ') + white('no lock-in'));
-    sep();
-    line();
-    console.log('  ' + muted('every file groundup writes is plain text you own. no hidden config,'));
-    console.log('  ' + muted('no runtime dependency on groundup itself. walk away any time.'));
-    line();
-
-    sep();
-    console.log(amber('■ ') + white('commands'));
-    sep();
-    line();
-    renderCommandsList();
-    line();
-
-    sep();
-    console.log('  ' + muted('press any key to start'));
-    sep();
-
+    if (!process.stdin.isTTY) {
+      resolve();
+      return;
+    }
     if (process.stdin.isPaused()) process.stdin.resume();
     process.stdin.setRawMode(true);
     const onData = () => {
       process.stdin.removeListener('data', onData);
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      markIntroSeen();
       resolve();
     };
     process.stdin.on('data', onData);

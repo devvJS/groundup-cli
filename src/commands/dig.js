@@ -10,7 +10,6 @@ import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview, createActivityLog } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
-import { showIntro, hasSeenIntro } from '../ui/intro.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
 import fs from 'fs';
@@ -243,10 +242,6 @@ export async function dig(name) {
       line();
       return;
     }
-  }
-
-  if (!hasSeenIntro()) {
-    await showIntro();
   }
 
   await showSplash();
