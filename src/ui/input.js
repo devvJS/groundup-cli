@@ -1,5 +1,5 @@
 import { amber, white, muted, warning, line, success, sep } from './splash.js';
-import { renderCommandsList } from './commands.js';
+import { paintCommandsOverlay, dismissCommandsOverlay } from './commands.js';
 
 function buildSelectHint(hasDecisions) {
   return '  ' + amber('↑ ↓') + ' ' + success('navigate') +
@@ -18,24 +18,6 @@ function buildMultiselectHint(hasDecisions) {
     (hasDecisions ? '   ' + amber('ctrl+o') + ' ' + success('expand decisions') : '');
 }
 
-// Alt-buffer commands overlay — used inline from any prompt on `/`. Save/
-// restore is handled entirely by the terminal's alt screen, so the caller's
-// stdin state and rendered body are untouched.
-function paintCommandsOverlay() {
-  process.stdout.write('\x1B[?1049h\x1B[2J\x1B[H');
-  sep();
-  console.log(amber('■ ') + white('commands'));
-  sep();
-  line();
-  renderCommandsList();
-  line();
-  sep();
-  console.log('  ' + muted('press any key to return'));
-}
-
-function dismissCommandsOverlay() {
-  process.stdout.write('\x1B[?1049l');
-}
 
 const AMBER_SGR = '\x1b[38;2;245;166;35m';
 const RESET_SGR = '\x1b[0m';
