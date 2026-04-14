@@ -1,6 +1,6 @@
 {
   "name": "groundup-cli",
-  "version": "0.1.1-beta.1",
+  "version": "0.2.0-beta.1",
   "description": "Build from nothing. A global CLI that takes you from empty folder to scaffolded project.",
   "type": "module",
   "bin": {
