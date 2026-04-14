@@ -1,11 +1,17 @@
 {
   "name": "groundup-cli",
-  "version": "0.1.1-beta.1",
+  "version": "0.2.0-beta.1",
   "description": "Build from nothing. A global CLI that takes you from empty folder to scaffolded project.",
   "type": "module",
   "bin": {
     "groundup": "bin/groundup.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -13,9 +19,12 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "@clack/prompts": "^0.7.0",
+    "@google/generative-ai": "^0.24.1",
     "chalk": "^5.0.0",
     "commander": "^12.0.0",
+    "openai": "^6.34.0",
     "ora": "^8.0.0"
   },
   "homepage": "https://github.com/devvJS/groundup-cli",

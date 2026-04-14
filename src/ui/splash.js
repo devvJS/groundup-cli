@@ -57,8 +57,50 @@ export function hint(text) {
   console.log(muted('  ' + text));
 }
 
-export function showSplash() {
-  console.clear();
+const MIN_COLS = 100;
+let splashResizeHandler = null;
+
+function renderWidthWarning() {
+  process.stdout.write('\x1B[2J\x1B[H');
+  line();
+  console.log(amber('■') + ' ' + white('groundup needs a wider terminal.'));
+  console.log(muted('minimum width: 100 columns — current: ' + (process.stdout.columns || 0)));
+  console.log(muted('please widen your terminal to continue.'));
+  line();
+}
+
+export function checkMinWidth() {
+  const cols = process.stdout.columns || 0;
+  if (cols < MIN_COLS) {
+    renderWidthWarning();
+    return false;
+  }
+  return true;
+}
+
+export function teardownSplashResize() {
+  if (splashResizeHandler) {
+    process.stdout.off('resize', splashResizeHandler);
+    splashResizeHandler = null;
+  }
+}
+
+function waitForWidth() {
+  return new Promise((resolve) => {
+    const check = () => {
+      if ((process.stdout.columns || 0) >= MIN_COLS) {
+        process.stdout.off('resize', onResize);
+        resolve();
+      } else {
+        renderWidthWarning();
+      }
+    };
+    const onResize = () => check();
+    process.stdout.on('resize', onResize);
+  });
+}
+
+function renderSplashBody() {
   const cols = process.stdout.columns || 80;
   const interiorWidth = Math.max(0, cols - 2);
   const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -89,4 +131,27 @@ export function showSplash() {
   console.log(taglineInterior);
   console.log(amber('╚' + '═'.repeat(interiorWidth) + '╝'));
   line();
+}
+
+export async function showSplash() {
+  process.stdout.write('\x1B[2J\x1B[H');
+
+  if ((process.stdout.columns || 0) < MIN_COLS) {
+    renderWidthWarning();
+    await waitForWidth();
+    process.stdout.write('\x1B[2J\x1B[H');
+  }
+
+  renderSplashBody();
+
+  teardownSplashResize();
+  splashResizeHandler = () => {
+    if ((process.stdout.columns || 0) < MIN_COLS) {
+      renderWidthWarning();
+      return;
+    }
+    process.stdout.write('\x1B[2J\x1B[H');
+    renderSplashBody();
+  };
+  process.stdout.on('resize', splashResizeHandler);
 }

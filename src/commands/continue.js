@@ -1,13 +1,13 @@
-import { showSplash, line, amber, white, muted } from '../ui/splash.js';
+import fs from 'fs';
+import path from 'path';
+import { showSplash, line, amber, white, muted, sep } from '../ui/splash.js';
 import { sessionExists, loadSession, updateSession } from '../session/state.js';
-import { runInterview } from '../interview/engine.js';
-import { runAgentSelection } from './agent.js';
-import { runStackSelection } from '../stack/selection.js';
-import { runBlueprint } from './blueprint.js';
 import { runRepoSetup } from './repo.js';
+import { runSeedToInterview } from './dig.js';
+import { reviewBlueprint, runAIInterview } from '../ai/interview.js';
 
 export async function resume() {
-  showSplash();
+  await showSplash();
 
   if (!sessionExists()) {
     console.log(amber('■ ') + white('No session found.'));
@@ -22,43 +22,115 @@ export async function resume() {
   console.log(muted(`  Phase: ${session.phase}`));
   line();
 
-  if (session.phase === 'interview') {
-    const answers = await runInterview(session);
-    updateSession({ phase: 'agent', interview: answers });
-    const s = loadSession();
-    await runAgentSelection(s);
-    const s2 = loadSession();
-    await runStackSelection(s2);
-    updateSession({ phase: 'blueprint' });
-    const s3 = loadSession();
-    await runBlueprint(s3);
-    const s4 = loadSession();
-    await runRepoSetup(s4);
-  } else if (session.phase === 'agent') {
-    await runAgentSelection(session);
-    const s = loadSession();
-    await runStackSelection(s);
-    updateSession({ phase: 'blueprint' });
-    const s2 = loadSession();
-    await runBlueprint(s2);
-    const s3 = loadSession();
-    await runRepoSetup(s3);
-  } else if (session.phase === 'stack') {
-    await runStackSelection(session);
-    updateSession({ phase: 'blueprint' });
-    const s = loadSession();
-    await runBlueprint(s);
-    const s2 = loadSession();
-    await runRepoSetup(s2);
-  } else if (session.phase === 'blueprint') {
-    await runBlueprint(session);
-    const s = loadSession();
-    await runRepoSetup(s);
-  } else if (session.phase === 'repo') {
-    await runRepoSetup(session);
-  } else if (session.phase === 'build') {
-    console.log(muted('  Build phase coming soon.'));
-  } else {
-    console.log(muted(`  Unknown phase: ${session.phase}`));
+  const projectName = session.project.name;
+  const projectDir = session.project.dir ?? process.cwd();
+
+  // Every resume path assumes the project directory already exists — no directory prompt.
+  try { process.chdir(projectDir); } catch {}
+
+  const prefill = {
+    purpose: session.interview?.purpose ?? session.seed?.purpose,
+    platform: session.interview?.platform ?? session.seed?.platform,
+    provider: session.interview?.provider ?? session.ai?.provider,
+  };
+
+  switch (session.phase) {
+    case 'seed': {
+      // Pass whatever seed/provider answers we already have; runSeedToInterview
+      // skips any prompt whose value is already prefilled.
+      await runSeedToInterview(projectName, projectDir, prefill);
+      return;
+    }
+
+    case 'interview': {
+      if (!prefill.purpose || !prefill.platform || !prefill.provider) {
+        // Partial pre-interview state — forward everything we have.
+        await runSeedToInterview(projectName, projectDir, prefill);
+        return;
+      }
+      const priorHistory = session.interview?.answers ?? session.interview?.history ?? [];
+      await runSeedToInterview(projectName, projectDir, prefill, priorHistory);
+      return;
+    }
+
+    case 'blueprint': {
+      const blueprintPath = path.join(projectDir, 'BLUEPRINT.md');
+      const priorHistory = session.interview?.answers ?? session.interview?.history ?? [];
+
+      // If BLUEPRINT.md is missing we can't review it — fall back to resuming
+      // the interview with whatever history we already collected.
+      const blueprintExists =
+        fs.existsSync(blueprintPath) && fs.readFileSync(blueprintPath, 'utf-8').trim().length > 0;
+
+      if (!blueprintExists) {
+        if (!prefill.purpose || !prefill.platform || !prefill.provider) {
+          await runSeedToInterview(projectName, projectDir, prefill, priorHistory);
+          return;
+        }
+        const s = loadSession();
+        updateSession({ ...s, phase: 'interview' });
+        await runAIInterview(
+          { purpose: prefill.purpose, platform: prefill.platform },
+          prefill.provider,
+          projectDir,
+          priorHistory
+        );
+        const after = loadSession();
+        updateSession({ ...after, phase: 'repo' });
+        await runRepoSetup(projectDir);
+        return;
+      }
+
+      // Interview is done, BLUEPRINT.md exists — jump straight to approval.
+      const result = await reviewBlueprint(projectDir, priorHistory);
+      if (result === 'approved') {
+        line();
+        sep();
+        console.log(amber('■ ') + white('interview complete — blueprint approved'));
+        sep();
+        line();
+        const s = loadSession();
+        updateSession({ ...s, phase: 'repo' });
+        await runRepoSetup(projectDir);
+        return;
+      }
+      // 'restart' — wipe BLUEPRINT.md, fall back through a fresh interview.
+      try {
+        fs.writeFileSync(blueprintPath, '');
+      } catch {}
+      const s = loadSession();
+      updateSession({ ...s, phase: 'interview', interview: { ...(s.interview || {}), answers: [] } });
+      await runAIInterview(
+        { purpose: prefill.purpose, platform: prefill.platform },
+        prefill.provider,
+        projectDir,
+        []
+      );
+      const after = loadSession();
+      updateSession({ ...after, phase: 'repo' });
+      await runRepoSetup(projectDir);
+      return;
+    }
+
+    case 'repo':
+      await runRepoSetup(session.project.dir);
+      return;
+
+    case 'build':
+      console.log(muted('  Build phase coming soon.'));
+      return;
+
+    // DEPRECATED v0.2.0 phases — sessions created before the AI engine:
+    case 'agent':
+    case 'stack':
+      console.log(amber('■ ') + white('This session was created with the pre-v0.2.0 flow.'));
+      console.log(muted('  The legacy interview/agent/stack phases have been replaced by the AI engine.'));
+      console.log(muted('  Start a fresh session with ') + white('groundup dig ' + projectName) + muted(' to continue.'));
+      line();
+      return;
+
+    default:
+      console.log(muted(`  Unknown phase: ${session.phase}`));
+      return;
   }
 }
