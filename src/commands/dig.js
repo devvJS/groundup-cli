@@ -213,7 +213,38 @@ async function ensureProviderKey(provider) {
   line();
 }
 
+function isGroundupCliRepo(dir) {
+  try {
+    const pkgPath = path.join(dir, 'package.json');
+    if (!fs.existsSync(pkgPath)) return false;
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    return pkg?.name === 'groundup-cli';
+  } catch {
+    return false;
+  }
+}
+
 export async function dig(name) {
+  if (isGroundupCliRepo(process.cwd())) {
+    console.log(amber('■ ') + white('You are inside the groundup-cli source repo.'));
+    console.log(muted('  Running dig here will scaffold a project into this directory.'));
+    line();
+    const proceed = await askSelect(
+      'Continue anyway?',
+      [
+        { value: 'no', label: 'No — exit', hint: 'recommended' },
+        { value: 'yes', label: 'Yes — I know what I\'m doing' },
+      ],
+      'no'
+    );
+    if (proceed !== 'yes') {
+      line();
+      console.log(muted('  Exited. Run groundup dig from a different directory.'));
+      line();
+      return;
+    }
+  }
+
   if (!hasSeenIntro()) {
     await showIntro();
   }
