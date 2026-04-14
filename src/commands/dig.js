@@ -324,12 +324,50 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   saveInterviewProgress(projectDir, { platform, phase: 'seed' });
 
   // --- STEP 1: provider onboarding (multiselect) ---
+  // Reactive callout — when the user toggles Claude Code (alone or paired
+  // with Anthropic API), render the relevant hint inline below the options.
+  // The hint updates live on every space-toggle.
+  const providerToggleHint = (selSet) => {
+    const hasCC = selSet.has('claudecode');
+    const hasClaude = selSet.has('claude');
+    const onlyCC = selSet.size === 1 && hasCC;
+    const pair = selSet.size === 2 && hasCC && hasClaude;
+
+    if (onlyCC) {
+      return [
+        '',
+        amber('  ■ ') + white('Claude Code selected'),
+        '',
+        muted('    Uses your claude.ai subscription — no API cost.'),
+        muted('    Responses may be slower than direct API access'),
+        muted('    as requests route through the Claude Code subprocess.'),
+      ];
+    }
+    if (pair) {
+      return [
+        '',
+        amber('  ■ ') + white('Claude Code + Anthropic API selected'),
+        '',
+        muted('    Both run the same Claude model family — billing differs:'),
+        muted('      · Claude Code   — subscription, no per-call charges, subprocess speed'),
+        muted('      · Anthropic API — per-token billing, lower latency'),
+        muted('    You can mix them per phase below.'),
+      ];
+    }
+    return [];
+  };
+
   let onboardedProviders = prefill.providers;
   while (!onboardedProviders || onboardedProviders.length === 0) {
     const picks = await askMultiselect(
       'Which AI providers do you want to use on this project?',
       PROVIDERS,
-      []
+      [],
+      undefined,
+      undefined,
+      false,
+      null,
+      providerToggleHint
     );
 
     if (picks.includes('claudecode') && !claudeCodeInstalled()) {
@@ -355,50 +393,24 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   activityLog.record('providers selected', providerLabels);
   saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
 
-  // --- Special-case flags ---
+  // --- Special-case flag ---
+  // Callouts for Claude-Code-only and Claude-Code + Anthropic-API are
+  // rendered reactively inside the provider multiselect itself (see
+  // providerToggleHint above), so there is no post-confirmation narration.
   const onlyClaudeCode =
     onboardedProviders.length === 1 && onboardedProviders[0] === 'claudecode';
-  const pairClaudeCodeAndClaude =
-    onboardedProviders.length === 2 &&
-    onboardedProviders.includes('claudecode') &&
-    onboardedProviders.includes('claude');
 
   let interviewModel = prefill.interviewModel ?? null;
   let buildModel = prefill.buildModel ?? null;
 
-  // --- Claude Code callout rendered immediately on provider confirmation ---
-  // so the user can read it before the thinking screen clears the terminal.
   if (onlyClaudeCode) {
-    line();
-    console.log(amber('■ ') + white('Claude Code selected'));
-    line();
-    console.log(muted('  Uses your claude.ai subscription — no API cost.'));
-    console.log(muted('  Responses may be slower than direct API access'));
-    console.log(muted('  as requests route through the Claude Code subprocess.'));
-    line();
-    sep();
-    line();
     interviewModel = interviewModel ?? { provider: 'claudecode', model: null };
     buildModel = buildModel ?? { provider: 'claudecode', model: null };
-    await sleep(1500);
   }
 
   // --- API key collection for every onboarded provider that needs one ---
   for (const p of onboardedProviders) {
     await ensureProviderKey(p);
-  }
-
-  if (pairClaudeCodeAndClaude && !prefill.interviewModel && !prefill.buildModel) {
-    line();
-    console.log(amber('■ ') + white('Claude Code + Anthropic API selected'));
-    line();
-    console.log(muted('  Both run the same Claude model family — billing differs:'));
-    console.log(muted('    · Claude Code   — subscription, no per-call charges, subprocess speed'));
-    console.log(muted('    · Anthropic API — per-token billing, lower latency'));
-    console.log(muted('  You can mix them per phase below.'));
-    line();
-    sep();
-    line();
   }
 
   const fmtChoice = (c) =>
