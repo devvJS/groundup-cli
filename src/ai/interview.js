@@ -518,7 +518,28 @@ ${transcript}`;
   }
 }
 
-function renderQuestion(parsed) {
+// renderQuestion — clears the screen and paints the live prompt view:
+// compact decisions header (once at least one interview answer exists)
+// followed by the current question. Every question render is a full
+// repaint, so the header never lingers as permanent scroll.
+function renderQuestion(parsed, history = []) {
+  process.stdout.write('\x1B[2J\x1B[H');
+  if (history.length > 0) {
+    sep();
+    console.log(white('decisions so far:'));
+    sep();
+    for (const d of history) {
+      const ans = formatAnswer(d.answer);
+      console.log(
+        success('✓') + ' ' +
+        muted(truncate(d.question, 48)) + ' ' +
+        muted('→') + ' ' +
+        amber(truncate(ans, 32))
+      );
+    }
+    console.log(muted('ctrl+o — expand'));
+    sep();
+  }
   line();
   if (parsed.question) console.log(white(parsed.question));
   if (parsed.subtext) {
@@ -533,29 +554,17 @@ function formatAnswer(answer) {
 
 const truncate = (str, max) => (str.length > max ? str.slice(0, max) + '...' : str);
 
-function clearAndRenderDecisions(decisions) {
-  process.stdout.write('\x1B[2J\x1B[H');
-  if (decisions.length === 0) return;
-  sep();
-  console.log(white('decisions so far:'));
-  sep();
-  for (const d of decisions) {
-    const ans = formatAnswer(d.answer);
-    console.log(
-      success('✓') + ' ' + muted(truncate(d.question, 48)) + ' ' + muted('→') + ' ' + amber(truncate(ans, 32))
-    );
-  }
-  console.log(muted('ctrl+o — expand any decision'));
-  sep();
-  line();
-}
-
+// showFullDecisions — renders the expanded ctrl+o overlay inside the
+// terminal's alternate screen buffer. Exiting the alt buffer restores the
+// previous screen state byte-for-byte, so there is zero scroll residue
+// regardless of what the underlying view looked like.
 function showFullDecisions(history) {
   return new Promise((resolve) => {
-    process.stdout.write('\x1B[2J\x1B[H');
+    process.stdout.write('\x1B[?1049h\x1B[2J\x1B[H');
     sep();
     console.log(white('all decisions'));
     sep();
+    line();
     for (const d of history) {
       const ans = Array.isArray(d.answer) ? d.answer.join(', ') : d.answer;
       console.log(success('✓') + ' ' + white(d.question));
@@ -563,7 +572,7 @@ function showFullDecisions(history) {
       line();
     }
     sep();
-    console.log(muted('press any key to return'));
+    console.log(muted('  press any key to return'));
 
     if (process.stdin.isPaused()) process.stdin.resume();
     process.stdin.setRawMode(true);
@@ -571,6 +580,7 @@ function showFullDecisions(history) {
       process.stdin.removeListener('data', onData);
       process.stdin.setRawMode(false);
       process.stdin.pause();
+      process.stdout.write('\x1B[?1049l');
       resolve();
     };
     process.stdin.on('data', onData);
@@ -600,7 +610,6 @@ function wordWrap(text, width) {
 
 function renderHelp(questionText, parsed, history = []) {
   process.stdout.write('\x1B[2J\x1B[H');
-  clearAndRenderDecisions(history);
   const cols = process.stdout.columns || 80;
   const interior = Math.max(2, cols - 2);
   const bodyWidth = Math.max(20, cols - 4);
@@ -688,7 +697,7 @@ async function streamHelpWithThinking(provider, system, baseMessages, parsed, pr
 }
 
 async function renderAndAsk(parsed, provider, providerName, system, messages, history, activityLog = null) {
-  renderQuestion(parsed);
+  renderQuestion(parsed, history);
 
   const onHelp = async () => {
     await streamHelpWithThinking(provider, system, messages, parsed, providerName, history, activityLog);
@@ -696,13 +705,11 @@ async function renderAndAsk(parsed, provider, providerName, system, messages, hi
 
   const onViewDecisions = async () => {
     await showFullDecisions(history);
-    clearAndRenderDecisions(history);
-    renderQuestion(parsed);
+    renderQuestion(parsed, history);
   };
 
   const onResize = () => {
-    clearAndRenderDecisions(history);
-    renderQuestion(parsed);
+    renderQuestion(parsed, history);
   };
 
   const { type, options, defaults } = parsed;
