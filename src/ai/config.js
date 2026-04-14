@@ -38,6 +38,18 @@ export function configPath() {
   return CONFIG_FILE;
 }
 
+export function getFlag(name) {
+  const data = read();
+  return data.flags?.[name] ?? null;
+}
+
+export function setFlag(name, value) {
+  const data = read();
+  if (!data.flags) data.flags = {};
+  data.flags[name] = value;
+  write(data);
+}
+
 export function getResponseTimes(provider) {
   const data = read();
   return data.responseTimes?.[provider] || [];

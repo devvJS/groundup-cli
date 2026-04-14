@@ -1,15 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { get } from '../config.js';
 
-const MODEL = 'gemini-1.5-pro';
+const DEFAULT_MODEL = 'gemini-1.5-pro';
 
-export async function* stream(messages, systemPrompt) {
+export async function* stream(messages, systemPrompt, { model: modelId = DEFAULT_MODEL } = {}) {
   const key = get('gemini');
   if (!key) throw new Error('No Gemini API key stored. Run groundup dig to configure.');
 
   const genAI = new GoogleGenerativeAI(key);
   const model = genAI.getGenerativeModel({
-    model: MODEL,
+    model: modelId,
     systemInstruction: systemPrompt,
   });
 

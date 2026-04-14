@@ -1,9 +1,9 @@
 const ENDPOINT = 'http://localhost:11434/api/chat';
-const MODEL = 'llama3';
+const DEFAULT_MODEL = 'llama3';
 
-export async function* stream(messages, systemPrompt) {
+export async function* stream(messages, systemPrompt, { model = DEFAULT_MODEL } = {}) {
   const body = {
-    model: MODEL,
+    model,
     stream: true,
     messages: [{ role: 'system', content: systemPrompt }, ...messages],
   };
