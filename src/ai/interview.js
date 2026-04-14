@@ -526,7 +526,7 @@ function renderQuestion(parsed, history = []) {
   process.stdout.write('\x1B[2J\x1B[H');
   if (history.length > 0) {
     sep();
-    console.log(white('decisions so far:'));
+    console.log(white('decisions:'));
     sep();
     for (const d of history) {
       const ans = formatAnswer(d.answer);
@@ -537,7 +537,6 @@ function renderQuestion(parsed, history = []) {
         amber(truncate(ans, 32))
       );
     }
-    console.log(muted('ctrl+o — expand'));
     sep();
   }
   line();
