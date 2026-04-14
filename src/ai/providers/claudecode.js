@@ -16,7 +16,7 @@ function flatten(messages) {
     .join('\n\n');
 }
 
-export async function* stream(messages, systemPrompt) {
+export async function* stream(messages, systemPrompt, _options = {}) {
   if (!isInstalled()) {
     throw new Error(`Claude Code not found. Install it at ${INSTALL_URL} or choose another provider.`);
   }

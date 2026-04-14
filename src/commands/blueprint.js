@@ -6,7 +6,7 @@ import { askSelect } from '../ui/input.js';
 export async function runBlueprint(session) {
   header(session.project.name, 'blueprint');
 
-  console.log(muted('  Generating BLUEPRINT.md from your decisions...'));
+  console.log(muted('  Generating .groundup/BLUEPRINT.md from your decisions...'));
   line();
 
   const content = generateBlueprint(session);
@@ -21,7 +21,7 @@ export async function runBlueprint(session) {
     'Does this reflect what you want to build?',
     [
       { value: 'approve', label: 'A — Approve and continue', hint: 'break ground' },
-      { value: 'edit', label: 'E — Edit BLUEPRINT.md first', hint: 'resume when ready' },
+      { value: 'edit', label: 'E — Edit .groundup/BLUEPRINT.md first', hint: 'resume when ready' },
       { value: 'restart', label: 'R — Restart interview', hint: 'start over' },
       { value: 'quit', label: 'Q — Quit', hint: 'session saved' },
     ],
@@ -46,7 +46,7 @@ export async function runBlueprint(session) {
   if (decision === 'edit') {
     updateSession({ phase: 'repo', blueprint: 'edited' });
     line();
-    console.log(amber('■ ') + white('BLUEPRINT.md is open for editing.'));
+    console.log(amber('■ ') + white('.groundup/BLUEPRINT.md is open for editing.'));
     console.log(muted('  Make your changes, then run ') + white('groundup continue') + muted(' to proceed.'));
     line();
     sep();

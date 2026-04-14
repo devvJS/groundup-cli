@@ -7,10 +7,11 @@ import { sessionExists, loadSession, saveSession, updateSession, clearSession, s
 // import { runBlueprint } from './blueprint.js';
 import { runRepoSetup } from './repo.js';
 import { resume } from './continue.js';
-import { askSelect, askText } from '../ui/input.js';
-import { runAIInterview } from '../ai/interview.js';
+import { askSelect, askMultiselect, askText } from '../ui/input.js';
+import { runAIInterview, createActivityLog } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
+import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -34,6 +35,14 @@ const PROVIDER_KEY_URLS = {
   gemini: 'https://aistudio.google.com/apikey',
 };
 
+const AGENTS = [
+  { value: 'claudecode', label: 'Claude Code' },
+  { value: 'cursor', label: 'Cursor' },
+  { value: 'copilot', label: 'GitHub Copilot' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'other', label: 'Other' },
+];
+
 const PLATFORMS = [
   { value: 'web', label: 'Web app' },
   { value: 'mobile', label: 'Mobile app' },
@@ -44,23 +53,138 @@ const PLATFORMS = [
   { value: 'other', label: 'Something else' },
 ];
 
-function installTemplates(projectDir, projectName, purpose, platform) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// runFsStep — drives a single fs operation through the unified activity log.
+// Shows `in progress` while running, then flips to a ✓ completed entry. A
+// small delay makes fast sync ops visible on the live screen.
+async function runFsStep(log, inProgressLabel, finishedLabel, value, fn) {
+  if (log) {
+    log.startTask(inProgressLabel);
+    await sleep(140);
+  }
+  fn();
+  if (log) log.finishTask(finishedLabel, value);
+}
+
+async function installGroundupDir(projectDir, projectName, purpose, platform, log = null) {
+  const groundupDir = path.join(projectDir, '.groundup');
+  if (!fs.existsSync(groundupDir)) {
+    await runFsStep(log, 'creating .groundup/', 'created', '.groundup/', () => {
+      fs.mkdirSync(groundupDir, { recursive: true });
+    });
+  }
+
   const groundupSrc = path.join(PLANS_DIR, 'GROUNDUP.md');
+  const groundupDest = path.join(groundupDir, 'GROUNDUP.md');
+  if (fs.existsSync(groundupSrc) && !fs.existsSync(groundupDest)) {
+    await runFsStep(log, 'writing GROUNDUP.md', 'wrote', '.groundup/GROUNDUP.md', () => {
+      fs.copyFileSync(groundupSrc, groundupDest);
+    });
+  }
+
   const blueprintSrc = path.join(PLANS_DIR, 'BLUEPRINT.md');
-
-  if (fs.existsSync(groundupSrc)) {
-    fs.copyFileSync(groundupSrc, path.join(projectDir, 'GROUNDUP.md'));
+  const blueprintDest = path.join(groundupDir, 'BLUEPRINT.md');
+  if (fs.existsSync(blueprintSrc) && !fs.existsSync(blueprintDest)) {
+    await runFsStep(log, 'writing BLUEPRINT.md', 'wrote', '.groundup/BLUEPRINT.md', () => {
+      const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+      const filled = fs
+        .readFileSync(blueprintSrc, 'utf-8')
+        .replace('[project-name]', projectName)
+        .replace('[purpose — one sentence, filled from seed question 1]', purpose)
+        .replace('[filled from seed question 2]', platformLabel);
+      fs.writeFileSync(blueprintDest, filled);
+    });
   }
 
-  if (fs.existsSync(blueprintSrc)) {
-    const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
-    const filled = fs
-      .readFileSync(blueprintSrc, 'utf-8')
-      .replace('[project-name]', projectName)
-      .replace('[purpose — one sentence, filled from seed question 1]', purpose)
-      .replace('[filled from seed question 2]', platformLabel);
-    fs.writeFileSync(path.join(projectDir, 'BLUEPRINT.md'), filled);
+  const gitignorePath = path.join(projectDir, '.gitignore');
+  const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
+  const alreadyIgnored = existing
+    .split('\n')
+    .map((l) => l.trim())
+    .some((l) => l === '.groundup/' || l === '.groundup');
+  if (!alreadyIgnored) {
+    const verb = existing ? 'updated' : 'created';
+    await runFsStep(log, 'updating .gitignore', verb, '.gitignore (+ .groundup/)', () => {
+      const prefix = existing.length && !existing.endsWith('\n') ? '\n' : '';
+      fs.writeFileSync(gitignorePath, existing + prefix + '.groundup/\n');
+    });
   }
+}
+
+async function installAgentDirs(projectDir, agents, log = null) {
+  if (!agents || agents.length === 0) return;
+
+  const agentsRoot = path.join(projectDir, '.groundup', 'agents');
+  if (!fs.existsSync(agentsRoot)) {
+    await runFsStep(log, 'creating .groundup/agents/', 'created', '.groundup/agents/', () => {
+      fs.mkdirSync(agentsRoot, { recursive: true });
+    });
+  }
+
+  for (const agent of agents) {
+    const dir = path.join(agentsRoot, agent);
+    const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
+    if (!fs.existsSync(dir)) {
+      await runFsStep(log, `scaffolding ${label}`, 'created', `.groundup/agents/${agent}/`, () => {
+        fs.mkdirSync(dir, { recursive: true });
+      });
+    }
+    const agentMd = path.join(dir, 'AGENT.md');
+    if (!fs.existsSync(agentMd)) {
+      await runFsStep(log, `writing ${agent}/AGENT.md`, 'wrote', `.groundup/agents/${agent}/AGENT.md`, () => {
+        fs.writeFileSync(agentMd, `# ${label}\n\nAgent configuration placeholder.\n`);
+      });
+    }
+    const skillsMd = path.join(dir, 'SKILLS.md');
+    if (!fs.existsSync(skillsMd)) {
+      await runFsStep(log, `writing ${agent}/SKILLS.md`, 'wrote', `.groundup/agents/${agent}/SKILLS.md`, () => {
+        fs.writeFileSync(skillsMd, `# ${label} — skills\n\nSkill list placeholder.\n`);
+      });
+    }
+  }
+}
+
+async function pickModel(phase, onboardedProviders) {
+  const candidates = modelsForPhase(phase, onboardedProviders);
+  if (candidates.length === 0) {
+    throw new Error(`No models available for phase ${phase}. Onboard at least one provider.`);
+  }
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    console.log(
+      muted(`  Only one ${phase} model available: `) +
+      white(`${PROVIDER_LABELS[c.provider]} — ${c.label}`)
+    );
+    line();
+    return { provider: c.provider, model: c.model };
+  }
+
+  const rec = recommendedFor(phase, onboardedProviders);
+  const options = candidates.map((c) => {
+    const hintParts = [];
+    if (c.recommended) hintParts.push('recommended');
+    hintParts.push(c.cost);
+    return {
+      value: `${c.provider}::${c.model ?? ''}`,
+      label: `${PROVIDER_LABELS[c.provider]} — ${c.label}`,
+      hint: hintParts.join(' · '),
+    };
+  });
+  const defaultVal = rec
+    ? `${rec.provider}::${rec.model ?? ''}`
+    : options[0].value;
+
+  const phaseLabel = phase === 'interview' ? 'Interview model' : 'Build model';
+  const pick = await askSelect(
+    `${phaseLabel} — which model should run the ${phase} phase?`,
+    options,
+    defaultVal
+  );
+  const idx = pick.indexOf('::');
+  const providerName = pick.slice(0, idx);
+  const modelName = pick.slice(idx + 2);
+  return { provider: providerName, model: modelName === '' ? null : modelName };
 }
 
 async function ensureProviderKey(provider) {
@@ -176,13 +300,17 @@ export async function dig(name) {
 }
 
 export async function runSeedToInterview(projectName, projectDir, prefill = {}, priorHistory = []) {
+  // Unified activity log — every seed answer, provider/model pick, and fs
+  // action gets recorded here and surfaces on the thinking screen later.
+  const activityLog = createActivityLog();
+
   // --- seed question 1: purpose ---
   const purpose = prefill.purpose ?? await askText(
     'In one sentence, what are you building?',
     'e.g. a CLI that scaffolds new projects from nothing',
     true
   );
-  if (!prefill.purpose) { sep(); line(); }
+  activityLog.record('what are you building?', purpose);
   saveInterviewProgress(projectDir, { purpose, phase: 'seed' });
 
   // --- seed question 2: platform ---
@@ -191,41 +319,158 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     PLATFORMS,
     'web'
   );
-  if (!prefill.platform) { sep(); line(); }
+  const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+  activityLog.record('what kind of thing?', platformLabel);
   saveInterviewProgress(projectDir, { platform, phase: 'seed' });
 
-  // --- provider selection ---
-  let provider = prefill.provider;
-  if (!provider) {
-    while (true) {
-      provider = await askSelect(
-        'Which AI agent should run your interview?',
-        PROVIDERS,
-        'claudecode'
-      );
-      sep();
+  // --- STEP 1: provider onboarding (multiselect) ---
+  // Reactive callout — when the user toggles Claude Code (alone or paired
+  // with Anthropic API), render the relevant hint inline below the options.
+  // The hint updates live on every space-toggle.
+  const providerToggleHint = (selSet) => {
+    const hasCC = selSet.has('claudecode');
+    const hasClaude = selSet.has('claude');
+    const onlyCC = selSet.size === 1 && hasCC;
+    const pair = selSet.size === 2 && hasCC && hasClaude;
+
+    if (onlyCC) {
+      return [
+        '',
+        amber('  ■ ') + white('Claude Code selected'),
+        '',
+        muted('    Uses your claude.ai subscription — no API cost.'),
+        muted('    Responses may be slower than direct API access'),
+        muted('    as requests route through the Claude Code subprocess.'),
+      ];
+    }
+    if (pair) {
+      return [
+        '',
+        amber('  ■ ') + white('Claude Code + Anthropic API selected'),
+        '',
+        muted('    Both run the same Claude model family — billing differs:'),
+        muted('      · Claude Code   — subscription, no per-call charges, subprocess speed'),
+        muted('      · Anthropic API — per-token billing, lower latency'),
+        muted('    You can mix them per phase below.'),
+      ];
+    }
+    return [];
+  };
+
+  let onboardedProviders = prefill.providers;
+  while (!onboardedProviders || onboardedProviders.length === 0) {
+    const picks = await askMultiselect(
+      'Which AI providers do you want to use on this project?',
+      PROVIDERS,
+      [],
+      undefined,
+      undefined,
+      false,
+      null,
+      providerToggleHint
+    );
+
+    if (picks.includes('claudecode') && !claudeCodeInstalled()) {
+      console.log(amber('■ ') + white('Claude Code not detected on this machine.'));
+      console.log(amber('  → ') + white(`Install it at: ${CLAUDE_CODE_INSTALL_URL}`));
+      console.log(muted('  Removing Claude Code from your selection.'));
       line();
-      if (provider === 'claudecode' && !claudeCodeInstalled()) {
-        console.log(amber('■ ') + white('Claude Code not detected on this machine.'));
-        console.log(amber('  → ') + white(`Install it at: ${CLAUDE_CODE_INSTALL_URL}`));
-        console.log(muted('  Or pick another provider.'));
-        line();
-        provider = null;
-        continue;
-      }
-      break;
+      onboardedProviders = picks.filter((p) => p !== 'claudecode');
+    } else {
+      onboardedProviders = picks;
+    }
+
+    if (onboardedProviders.length === 0) {
+      console.log(amber('■ ') + white('Pick at least one provider to continue.'));
+      line();
+      onboardedProviders = null;
     }
   }
 
-  await ensureProviderKey(provider);
-  saveInterviewProgress(projectDir, { provider, phase: 'interview' });
+  const providerLabels = onboardedProviders
+    .map((p) => PROVIDER_LABELS[p] ?? p)
+    .join(', ');
+  activityLog.record('providers selected', providerLabels);
+  saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
 
-  // --- install plan templates into the project dir (idempotent) ---
-  installTemplates(projectDir, projectName, purpose, platform);
+  // --- Special-case flag ---
+  // Callouts for Claude-Code-only and Claude-Code + Anthropic-API are
+  // rendered reactively inside the provider multiselect itself (see
+  // providerToggleHint above), so there is no post-confirmation narration.
+  const onlyClaudeCode =
+    onboardedProviders.length === 1 && onboardedProviders[0] === 'claudecode';
+
+  let interviewModel = prefill.interviewModel ?? null;
+  let buildModel = prefill.buildModel ?? null;
+
+  if (onlyClaudeCode) {
+    interviewModel = interviewModel ?? { provider: 'claudecode', model: null };
+    buildModel = buildModel ?? { provider: 'claudecode', model: null };
+  }
+
+  // --- API key collection for every onboarded provider that needs one ---
+  for (const p of onboardedProviders) {
+    await ensureProviderKey(p);
+  }
+
+  const fmtChoice = (c) =>
+    `${PROVIDER_LABELS[c.provider]}${c.model ? ' / ' + c.model : ''}`;
+
+  // --- STEP 2: interview model ---
+  if (!interviewModel) {
+    interviewModel = await pickModel('interview', onboardedProviders);
+  }
+  activityLog.record('interview model', fmtChoice(interviewModel));
+  saveInterviewProgress(projectDir, { interviewModel, phase: 'interview' });
+
+  // --- STEP 3: build model ---
+  if (!buildModel) {
+    buildModel = await pickModel('build', onboardedProviders);
+  }
+  activityLog.record('build model', fmtChoice(buildModel));
+  saveInterviewProgress(projectDir, { buildModel, phase: 'interview' });
+
+  // Keep legacy session.interview.provider field in sync so continue.js and
+  // other pre-model-select code paths still work.
+  saveInterviewProgress(projectDir, {
+    provider: interviewModel.provider,
+    phase: 'interview',
+  });
+
+  const provider = interviewModel.provider;
+
+  // --- agent multiselect (skipped when Claude Code is the only provider) ---
+  let agents = prefill.agents;
+  if (onlyClaudeCode) {
+    agents = agents ?? ['claudecode'];
+  } else if (!agents) {
+    agents = await askMultiselect(
+      'Which AI coding agents will you use on this project?',
+      AGENTS,
+      ['claudecode']
+    );
+  }
+  const agentLabels = agents
+    .map((a) => AGENTS.find((x) => x.value === a)?.label ?? a)
+    .join(', ');
+  activityLog.record('agents selected', agentLabels);
+  saveInterviewProgress(projectDir, { agents, phase: 'interview' });
 
   // --- phase: AI interview ---
+  // The thinking screen (started inside runAIInterview) is the single source
+  // of truth for activity from here forward — fs installs run live inside it
+  // via preInstalls, and every seed decision above already lives in the log.
+  // Full terminal clear so the thinking screen starts on a clean slate —
+  // seed/provider/model scroll is wiped before the unified view takes over.
+  process.stdout.write('\x1B[2J\x1B[H');
   try {
-    await runAIInterview({ purpose, platform }, provider, projectDir, priorHistory);
+    await runAIInterview({ purpose, platform }, provider, projectDir, priorHistory, {
+      activityLog,
+      preInstalls: async (log) => {
+        await installGroundupDir(projectDir, projectName, purpose, platform, log);
+        await installAgentDirs(projectDir, agents, log);
+      },
+    });
   } catch (err) {
     line();
     console.log(amber('■ ') + white(`Interview failed: ${err.message}`));

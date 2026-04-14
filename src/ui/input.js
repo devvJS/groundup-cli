@@ -325,7 +325,7 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
   });
 }
 
-export function askMultiselect(message, options, initialSelected = [], onHelp, onViewDecisions, hasDecisions = false, onResize = null) {
+export function askMultiselect(message, options, initialSelected = [], onHelp, onViewDecisions, hasDecisions = false, onResize = null, onToggle = null) {
   return new Promise((resolve) => {
     let rule = muted('═'.repeat(process.stdout.columns || 80));
     const hint = buildMultiselectHint(hasDecisions);
@@ -338,6 +338,19 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
     let cursor = 0;
     let mode = 'input';
     const selected = new Set(initialSelected);
+    let contextualLines = [];
+    let lastTotalRows = 0;
+
+    const computeContextual = () => {
+      if (typeof onToggle !== 'function') return [];
+      try {
+        const result = onToggle(new Set(selected));
+        if (!result) return [];
+        return Array.isArray(result) ? result : [result];
+      } catch {
+        return [];
+      }
+    };
 
     const drawRow = (opt, isCursor) => {
       const isSelected = selected.has(opt.value);
@@ -350,21 +363,30 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
       return `${prefix}${label}${hint}\n`;
     };
 
-    const printOptions = () => {
+    const writeBody = () => {
       options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === cursor)));
       process.stdout.write('\n');
       process.stdout.write(hint + '\n');
       process.stdout.write('\n');
+      contextualLines = computeContextual();
+      for (const l of contextualLines) process.stdout.write(l + '\n');
+      lastTotalRows = options.length + 3 + contextualLines.length;
     };
 
+    const printOptions = () => {
+      writeBody();
+    };
+
+    // Full repaint — move up over the prior body (options + hint block +
+    // contextual lines), clear to end of screen, redraw fresh. Using \x1b[J
+    // (not per-line \x1b[2K) handles variable-height contextual blocks where
+    // the number of lines can grow or shrink between renders.
     const rerender = () => {
-      process.stdout.write(`\x1b[${options.length + 3}A`);
-      options.forEach((opt, i) => {
-        process.stdout.write(`\r\x1b[2K` + drawRow(opt, i === cursor));
-      });
-      process.stdout.write(`\r\x1b[2K\n`);
-      process.stdout.write(`\r\x1b[2K` + hint + '\n');
-      process.stdout.write(`\r\x1b[2K\n`);
+      if (lastTotalRows > 0) {
+        process.stdout.write(`\x1b[${lastTotalRows}A`);
+      }
+      process.stdout.write('\r\x1b[J');
+      writeBody();
     };
 
     const teardown = () => {
@@ -472,7 +494,7 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
           teardown();
           const carry = [...selected];
           Promise.resolve(onViewDecisions()).then(() => {
-            resolve(askMultiselect(message, options, carry, onHelp, onViewDecisions, hasDecisions, onResize));
+            resolve(askMultiselect(message, options, carry, onHelp, onViewDecisions, hasDecisions, onResize, onToggle));
           });
           return;
         }
