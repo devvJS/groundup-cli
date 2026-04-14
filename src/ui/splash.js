@@ -117,8 +117,8 @@ function renderSplashBody() {
     return edge + ' '.repeat(leftPad) + paint(text) + ' '.repeat(rightPad) + edge;
   };
 
-  const taglineVisible = `  build from nothing. ■  v${version}`;
-  const taglineContent = '  ' + white('build from nothing. ') + amber('■') + '  ' + muted(`v${version}`);
+  const taglineVisible = `  build from nothing. ⚒️  v${version}`;
+  const taglineContent = '  ' + white('build from nothing. ⚒️') + '  ' + muted(`v${version}`);
   const taglineRightPad = Math.max(0, interiorWidth - taglineVisible.length);
   const taglineInterior = edge + taglineContent + ' '.repeat(taglineRightPad) + edge;
 
