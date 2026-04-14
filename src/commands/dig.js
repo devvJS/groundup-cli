@@ -97,6 +97,14 @@ async function installGroundupDir(projectDir, projectName, purpose, platform, lo
     });
   }
 
+  const readmePath = path.join(projectDir, 'README.md');
+  if (!fs.existsSync(readmePath)) {
+    await runFsStep(log, 'writing README.md', 'wrote', 'README.md', () => {
+      const body = `# ${projectName}\n\n> ${purpose}\n\n---\n\n_built with groundup ⚒️_\n`;
+      fs.writeFileSync(readmePath, body);
+    });
+  }
+
   const gitignorePath = path.join(projectDir, '.gitignore');
   const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
   const alreadyIgnored = existing
