@@ -1,4 +1,4 @@
-import { showSplash, teardownSplashResize, line, amber, white, muted, sep, success } from '../ui/splash.js';
+import { showSplash, teardownSplashResize, line, amber, white, muted, sep } from '../ui/splash.js';
 import { sessionExists, loadSession, saveSession, updateSession, clearSession, saveInterviewProgress } from '../session/state.js';
 // DEPRECATED: replaced by AI engine in v0.2.0
 // import { runInterview } from '../interview/engine.js';
@@ -8,7 +8,7 @@ import { sessionExists, loadSession, saveSession, updateSession, clearSession, s
 import { runRepoSetup } from './repo.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
-import { runAIInterview } from '../ai/interview.js';
+import { runAIInterview, createActivityLog } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
@@ -53,45 +53,48 @@ const PLATFORMS = [
   { value: 'other', label: 'Something else' },
 ];
 
-function narrate(verb, relPath) {
-  console.log(amber('■ ') + white(verb + ' ') + muted(relPath));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// runFsStep — drives a single fs operation through the unified activity log.
+// Shows `in progress` while running, then flips to a ✓ completed entry. A
+// small delay makes fast sync ops visible on the live screen.
+async function runFsStep(log, inProgressLabel, finishedLabel, value, fn) {
+  if (log) {
+    log.startTask(inProgressLabel);
+    await sleep(140);
+  }
+  fn();
+  if (log) log.finishTask(finishedLabel, value);
 }
 
-// Single-line completion marker for a finished step. Mirrors the pattern
-// used by the interview decisions list in src/ai/interview.js.
-function stepDone(label, value) {
-  console.log(success('✓') + ' ' + white(label) + '  ' + muted(value));
-  line();
-}
-
-function installGroundupDir(projectDir, projectName, purpose, platform) {
-  console.log(amber('■ ') + white('setting up .groundup/'));
-  line();
-
+async function installGroundupDir(projectDir, projectName, purpose, platform, log = null) {
   const groundupDir = path.join(projectDir, '.groundup');
   if (!fs.existsSync(groundupDir)) {
-    fs.mkdirSync(groundupDir, { recursive: true });
-    narrate('created', '.groundup/');
+    await runFsStep(log, 'creating .groundup/', 'created', '.groundup/', () => {
+      fs.mkdirSync(groundupDir, { recursive: true });
+    });
   }
 
   const groundupSrc = path.join(PLANS_DIR, 'GROUNDUP.md');
   const groundupDest = path.join(groundupDir, 'GROUNDUP.md');
   if (fs.existsSync(groundupSrc) && !fs.existsSync(groundupDest)) {
-    fs.copyFileSync(groundupSrc, groundupDest);
-    narrate('wrote', '.groundup/GROUNDUP.md');
+    await runFsStep(log, 'writing GROUNDUP.md', 'wrote', '.groundup/GROUNDUP.md', () => {
+      fs.copyFileSync(groundupSrc, groundupDest);
+    });
   }
 
   const blueprintSrc = path.join(PLANS_DIR, 'BLUEPRINT.md');
   const blueprintDest = path.join(groundupDir, 'BLUEPRINT.md');
   if (fs.existsSync(blueprintSrc) && !fs.existsSync(blueprintDest)) {
-    const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
-    const filled = fs
-      .readFileSync(blueprintSrc, 'utf-8')
-      .replace('[project-name]', projectName)
-      .replace('[purpose — one sentence, filled from seed question 1]', purpose)
-      .replace('[filled from seed question 2]', platformLabel);
-    fs.writeFileSync(blueprintDest, filled);
-    narrate('wrote', '.groundup/BLUEPRINT.md');
+    await runFsStep(log, 'writing BLUEPRINT.md', 'wrote', '.groundup/BLUEPRINT.md', () => {
+      const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+      const filled = fs
+        .readFileSync(blueprintSrc, 'utf-8')
+        .replace('[project-name]', projectName)
+        .replace('[purpose — one sentence, filled from seed question 1]', purpose)
+        .replace('[filled from seed question 2]', platformLabel);
+      fs.writeFileSync(blueprintDest, filled);
+    });
   }
 
   const gitignorePath = path.join(projectDir, '.gitignore');
@@ -101,51 +104,45 @@ function installGroundupDir(projectDir, projectName, purpose, platform) {
     .map((l) => l.trim())
     .some((l) => l === '.groundup/' || l === '.groundup');
   if (!alreadyIgnored) {
-    const prefix = existing.length && !existing.endsWith('\n') ? '\n' : '';
-    fs.writeFileSync(gitignorePath, existing + prefix + '.groundup/\n');
-    narrate(existing ? 'updated' : 'created', '.gitignore (+ .groundup/)');
+    const verb = existing ? 'updated' : 'created';
+    await runFsStep(log, 'updating .gitignore', verb, '.gitignore (+ .groundup/)', () => {
+      const prefix = existing.length && !existing.endsWith('\n') ? '\n' : '';
+      fs.writeFileSync(gitignorePath, existing + prefix + '.groundup/\n');
+    });
   }
-
-  line();
-  sep();
-  line();
 }
 
-function installAgentDirs(projectDir, agents) {
+async function installAgentDirs(projectDir, agents, log = null) {
   if (!agents || agents.length === 0) return;
-
-  console.log(amber('■ ') + white('scaffolding agent directories'));
-  line();
 
   const agentsRoot = path.join(projectDir, '.groundup', 'agents');
   if (!fs.existsSync(agentsRoot)) {
-    fs.mkdirSync(agentsRoot, { recursive: true });
-    narrate('created', '.groundup/agents/');
+    await runFsStep(log, 'creating .groundup/agents/', 'created', '.groundup/agents/', () => {
+      fs.mkdirSync(agentsRoot, { recursive: true });
+    });
   }
 
   for (const agent of agents) {
     const dir = path.join(agentsRoot, agent);
+    const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      narrate('created', `.groundup/agents/${agent}/`);
+      await runFsStep(log, `scaffolding ${label}`, 'created', `.groundup/agents/${agent}/`, () => {
+        fs.mkdirSync(dir, { recursive: true });
+      });
     }
     const agentMd = path.join(dir, 'AGENT.md');
     if (!fs.existsSync(agentMd)) {
-      const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
-      fs.writeFileSync(agentMd, `# ${label}\n\nAgent configuration placeholder.\n`);
-      narrate('wrote', `.groundup/agents/${agent}/AGENT.md`);
+      await runFsStep(log, `writing ${agent}/AGENT.md`, 'wrote', `.groundup/agents/${agent}/AGENT.md`, () => {
+        fs.writeFileSync(agentMd, `# ${label}\n\nAgent configuration placeholder.\n`);
+      });
     }
     const skillsMd = path.join(dir, 'SKILLS.md');
     if (!fs.existsSync(skillsMd)) {
-      const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
-      fs.writeFileSync(skillsMd, `# ${label} — skills\n\nSkill list placeholder.\n`);
-      narrate('wrote', `.groundup/agents/${agent}/SKILLS.md`);
+      await runFsStep(log, `writing ${agent}/SKILLS.md`, 'wrote', `.groundup/agents/${agent}/SKILLS.md`, () => {
+        fs.writeFileSync(skillsMd, `# ${label} — skills\n\nSkill list placeholder.\n`);
+      });
     }
   }
-
-  line();
-  sep();
-  line();
 }
 
 async function pickModel(phase, onboardedProviders) {
@@ -303,13 +300,17 @@ export async function dig(name) {
 }
 
 export async function runSeedToInterview(projectName, projectDir, prefill = {}, priorHistory = []) {
+  // Unified activity log — every seed answer, provider/model pick, and fs
+  // action gets recorded here and surfaces on the thinking screen later.
+  const activityLog = createActivityLog();
+
   // --- seed question 1: purpose ---
   const purpose = prefill.purpose ?? await askText(
     'In one sentence, what are you building?',
     'e.g. a CLI that scaffolds new projects from nothing',
     true
   );
-  if (!prefill.purpose) stepDone('what are you building?', purpose);
+  activityLog.record('what are you building?', purpose);
   saveInterviewProgress(projectDir, { purpose, phase: 'seed' });
 
   // --- seed question 2: platform ---
@@ -318,10 +319,8 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     PLATFORMS,
     'web'
   );
-  if (!prefill.platform) {
-    const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
-    stepDone('what kind of thing?', platformLabel);
-  }
+  const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+  activityLog.record('what kind of thing?', platformLabel);
   saveInterviewProgress(projectDir, { platform, phase: 'seed' });
 
   // --- STEP 1: provider onboarding (multiselect) ---
@@ -350,12 +349,10 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     }
   }
 
-  if (!prefill.providers) {
-    const providerLabels = onboardedProviders
-      .map((p) => PROVIDER_LABELS[p] ?? p)
-      .join(', ');
-    stepDone('providers selected', providerLabels);
-  }
+  const providerLabels = onboardedProviders
+    .map((p) => PROVIDER_LABELS[p] ?? p)
+    .join(', ');
+  activityLog.record('providers selected', providerLabels);
   saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
 
   // --- API key collection for every onboarded provider that needs one ---
@@ -405,15 +402,15 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   // --- STEP 2: interview model ---
   if (!interviewModel) {
     interviewModel = await pickModel('interview', onboardedProviders);
-    stepDone('interview model', fmtChoice(interviewModel));
   }
+  activityLog.record('interview model', fmtChoice(interviewModel));
   saveInterviewProgress(projectDir, { interviewModel, phase: 'interview' });
 
   // --- STEP 3: build model ---
   if (!buildModel) {
     buildModel = await pickModel('build', onboardedProviders);
-    stepDone('build model', fmtChoice(buildModel));
   }
+  activityLog.record('build model', fmtChoice(buildModel));
   saveInterviewProgress(projectDir, { buildModel, phase: 'interview' });
 
   // Keep legacy session.interview.provider field in sync so continue.js and
@@ -422,17 +419,6 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     provider: interviewModel.provider,
     phase: 'interview',
   });
-
-  // --- Narrate final decisions ---
-  sep();
-  line();
-  console.log(amber('■ ') + white('provider & model decisions'));
-  line();
-  console.log(white('  interview:') + ' ' + muted(fmtChoice(interviewModel)));
-  console.log(white('  build:    ') + ' ' + muted(fmtChoice(buildModel)));
-  line();
-  sep();
-  line();
 
   const provider = interviewModel.provider;
 
@@ -446,20 +432,25 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
       AGENTS,
       ['claudecode']
     );
-    const agentLabels = agents
-      .map((a) => AGENTS.find((x) => x.value === a)?.label ?? a)
-      .join(', ');
-    stepDone('agents selected', agentLabels);
   }
+  const agentLabels = agents
+    .map((a) => AGENTS.find((x) => x.value === a)?.label ?? a)
+    .join(', ');
+  activityLog.record('agents selected', agentLabels);
   saveInterviewProgress(projectDir, { agents, phase: 'interview' });
 
-  // --- install .groundup/ (templates + .gitignore) and agent dirs ---
-  installGroundupDir(projectDir, projectName, purpose, platform);
-  installAgentDirs(projectDir, agents);
-
   // --- phase: AI interview ---
+  // The thinking screen (started inside runAIInterview) is the single source
+  // of truth for activity from here forward — fs installs run live inside it
+  // via preInstalls, and every seed decision above already lives in the log.
   try {
-    await runAIInterview({ purpose, platform }, provider, projectDir, priorHistory);
+    await runAIInterview({ purpose, platform }, provider, projectDir, priorHistory, {
+      activityLog,
+      preInstalls: async (log) => {
+        await installGroundupDir(projectDir, projectName, purpose, platform, log);
+        await installAgentDirs(projectDir, agents, log);
+      },
+    });
   } catch (err) {
     line();
     console.log(amber('■ ') + white(`Interview failed: ${err.message}`));

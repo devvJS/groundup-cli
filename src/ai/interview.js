@@ -239,7 +239,42 @@ export function remainingTopics(history) {
   return TOPIC_LIST.filter((t) => !covered.has(t));
 }
 
-function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history = [], topicsRemaining = []) {
+// createActivityLog — an observable running record of everything groundup has
+// done in the current session. The thinking screen subscribes and repaints
+// whenever the log changes, so fs actions, seed decisions, and interview
+// answers all flow through the same view.
+export function createActivityLog() {
+  const state = { completed: [], activeTask: null };
+  const listeners = new Set();
+  const notify = () => {
+    for (const fn of listeners) {
+      try { fn(); } catch {}
+    }
+  };
+  return {
+    get completed() { return state.completed; },
+    get activeTask() { return state.activeTask; },
+    record(label, value) {
+      state.completed.push({ label, value });
+      notify();
+    },
+    startTask(label) {
+      state.activeTask = label;
+      notify();
+    },
+    finishTask(label, value) {
+      state.completed.push({ label, value });
+      state.activeTask = null;
+      notify();
+    },
+    onChange(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+  };
+}
+
+function startThinking({ providerName, pool = INTERVIEW_THINKING_MESSAGES, activityLog, topicsRemaining = [] } = {}) {
   const message = pool[Math.floor(Math.random() * pool.length)];
   const tokenHistory = providerName ? getTokenCounts(providerName) : [];
   const estTokens = tokenHistory.length > 0
@@ -270,7 +305,20 @@ function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history
     );
   };
 
-  const actionLine = () => amber('  › ') + muted(currentAction);
+  const actionLine = () => {
+    const task = activityLog?.activeTask || currentAction;
+    return amber('  › ') + muted(task);
+  };
+
+  const LABEL_WIDTH = 28;
+  const VALUE_WIDTH = 36;
+
+  const formatCompleted = (item) => {
+    const rawLabel = String(item.label || '');
+    const label = truncate(rawLabel, LABEL_WIDTH).padEnd(LABEL_WIDTH);
+    const value = truncate(String(item.value || ''), VALUE_WIDTH);
+    return '  ' + success('✓') + ' ' + white(label) + ' ' + muted(value);
+  };
 
   const buildFullLayout = () => {
     const lines = [];
@@ -282,18 +330,13 @@ function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history
     lines.push('');
 
     lines.push(amber('  completed:'));
-    const recent = history.slice(-5);
+    const completed = activityLog?.completed ?? [];
+    const recent = completed.slice(-10);
     if (recent.length === 0) {
       lines.push(muted('  (nothing yet)'));
     } else {
-      for (const h of recent) {
-        const ans = Array.isArray(h.answer) ? h.answer.join(', ') : String(h.answer || '');
-        lines.push(
-          muted('  ■ ') +
-            muted(truncate(h.question || '', 24)) +
-            muted(' — ') +
-            amber(truncate(ans, 20))
-        );
+      for (const item of recent) {
+        lines.push(formatCompleted(item));
       }
     }
     lines.push('');
@@ -314,6 +357,12 @@ function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history
     }
 
     return { lines, barIdx: bIdx, actionIdx: aIdx };
+  };
+
+  const eraseCurrent = () => {
+    if (!painted) return;
+    process.stdout.write(`\x1B[${totalLines}A\x1B[J`);
+    painted = false;
   };
 
   const paintFull = () => {
@@ -344,9 +393,22 @@ function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history
     else paintDynamic();
   };
 
+  // Clear the screen once on start so seed clack traces, callouts, and
+  // prior scroll are replaced by the unified thinking view.
+  process.stdout.write('\x1B[2J\x1B[H');
   process.stdout.write('\x1B[?25l');
   paint();
   const interval = setInterval(paint, 200);
+
+  // Structural repaint on every activity-log change — the completed block
+  // grows so the layout height can change.
+  const unsubscribe = activityLog
+    ? activityLog.onChange(() => {
+        if (stopped) return;
+        eraseCurrent();
+        paintFull();
+      })
+    : () => {};
 
   return {
     setAction(next) {
@@ -358,14 +420,12 @@ function startThinking(providerName, pool = INTERVIEW_THINKING_MESSAGES, history
     async stop() {
       if (stopped) return;
       stopped = true;
+      unsubscribe();
       clearInterval(interval);
       held = true;
       paint();
       await new Promise((r) => setTimeout(r, 300));
-      if (painted) {
-        process.stdout.write(`\x1B[${totalLines}A\x1B[J`);
-        painted = false;
-      }
+      eraseCurrent();
       process.stdout.write('\x1B[?25h');
       const elapsed = Date.now() - startTime;
       if (providerName) {
@@ -593,7 +653,7 @@ function renderHelp(questionText, parsed, history = []) {
   console.log(amber('←') + ' ' + warning('ESC') + ' ' + muted('to') + ' ' + success('go back'));
 }
 
-async function streamHelpWithThinking(provider, system, baseMessages, parsed, providerName, history = []) {
+async function streamHelpWithThinking(provider, system, baseMessages, parsed, providerName, history = [], activityLog = null) {
   const context = [
     `Question: ${parsed.question}`,
     parsed.subtext ? `Subtext: ${parsed.subtext}` : null,
@@ -603,12 +663,12 @@ async function streamHelpWithThinking(provider, system, baseMessages, parsed, pr
     .join('\n');
 
   const helpMsg = `The developer hit h (help) on this question. Provide a HELP response.\n\n${context}`;
-  const indicator = startThinking(
+  const indicator = startThinking({
     providerName,
-    HELP_THINKING_MESSAGES,
-    history,
-    remainingTopics(history)
-  );
+    pool: HELP_THINKING_MESSAGES,
+    activityLog,
+    topicsRemaining: remainingTopics(history),
+  });
   indicator.setAction('consulting the foreman...');
 
   let full = '';
@@ -627,11 +687,11 @@ async function streamHelpWithThinking(provider, system, baseMessages, parsed, pr
   renderHelp(parsed.question, helpParsed, history);
 }
 
-async function renderAndAsk(parsed, provider, providerName, system, messages, history) {
+async function renderAndAsk(parsed, provider, providerName, system, messages, history, activityLog = null) {
   renderQuestion(parsed);
 
   const onHelp = async () => {
-    await streamHelpWithThinking(provider, system, messages, parsed, providerName, history);
+    await streamHelpWithThinking(provider, system, messages, parsed, providerName, history, activityLog);
   };
 
   const onViewDecisions = async () => {
@@ -732,7 +792,7 @@ function buildResumeMessage(priorHistory) {
   return `We are resuming an interview that was interrupted. Here are the questions and answers already collected:\n\n${transcript}\n\nDo NOT re-ask any of these. Continue with the next unanswered question based on what's still needed for a complete blueprint.`;
 }
 
-export async function runAIInterview(seedAnswers, providerName, projectDir, priorHistory = []) {
+export async function runAIInterview(seedAnswers, providerName, projectDir, priorHistory = [], options = {}) {
   // Prefer the explicit interview model stored in session; fall back to the
   // provider's DEFAULT_MODEL if no selection was made (legacy sessions).
   let selectedModel = null;
@@ -743,7 +803,10 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
   } catch {}
   const provider = getProvider(providerName, selectedModel);
 
+  const activityLog = options.activityLog ?? createActivityLog();
+  const { preInstalls } = options;
   let resumeHistory = priorHistory;
+  let firstPass = true;
 
   while (true) {
     blueprintLocked = false;
@@ -752,7 +815,10 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
 
     if (resumeHistory && resumeHistory.length > 0) {
       messages.push({ role: 'user', content: buildResumeMessage(resumeHistory) });
-      for (const h of resumeHistory) history.push(h);
+      for (const h of resumeHistory) {
+        history.push(h);
+        activityLog.record(h.question, formatAnswer(h.answer));
+      }
       // Only apply resume on the first pass; a restart wipes back to a fresh interview.
       resumeHistory = [];
     } else {
@@ -762,14 +828,25 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
       });
     }
 
-    // clean slate before the first question — paint thinking indicator BEFORE any AI call
-    clearAndRenderDecisions(history);
-    let indicator = startThinking(
+    // Unified thinking screen — single source of truth for every activity.
+    let indicator = startThinking({
       providerName,
-      INTERVIEW_THINKING_MESSAGES,
-      history,
-      remainingTopics(history)
-    );
+      pool: INTERVIEW_THINKING_MESSAGES,
+      activityLog,
+      topicsRemaining: remainingTopics(history),
+    });
+
+    // Run any fs installs INSIDE the indicator so startTask/finishTask drive
+    // the live UI. Only on the first pass — a restart reuses the same dir.
+    if (firstPass && typeof preInstalls === 'function') {
+      try {
+        await preInstalls(activityLog);
+      } catch (err) {
+        await indicator.stop();
+        throw err;
+      }
+    }
+    firstPass = false;
 
     while (true) {
       const blueprint = readBlueprint(projectDir);
@@ -787,21 +864,22 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
 
       messages.push({ role: 'assistant', content: response });
 
-      const answer = await renderAndAsk(parsed, provider, providerName, system, messages, history);
+      const answer = await renderAndAsk(parsed, provider, providerName, system, messages, history, activityLog);
 
       const displayAnswer = formatAnswer(answer);
       messages.push({ role: 'user', content: displayAnswer });
       history.push({ question: parsed.question, answer });
+      activityLog.record(parsed.question, displayAnswer);
 
-      // clear the previous question UI, redraw decisions list with the new confirmation,
-      // then start a fresh indicator that spans blueprint update + next AI call
-      clearAndRenderDecisions(history);
-      indicator = startThinking(
+      // start a fresh indicator that spans blueprint update + next AI call.
+      // The indicator clears the screen and reads from activityLog, so every
+      // prior decision reappears in the completed block.
+      indicator = startThinking({
         providerName,
-        INTERVIEW_THINKING_MESSAGES,
-        history,
-        remainingTopics(history)
-      );
+        pool: INTERVIEW_THINKING_MESSAGES,
+        activityLog,
+        topicsRemaining: remainingTopics(history),
+      });
       indicator.setAction('updating blueprint...');
 
       await updateBlueprint(provider, projectDir, history, indicator);
