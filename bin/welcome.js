@@ -4,10 +4,11 @@ import { showSplash, teardownSplashResize, line } from '../src/ui/splash.js';
 import { renderWelcomeBody, waitForAnyKey, hasSeenWelcome, markWelcomeSeen } from '../src/ui/intro.js';
 
 async function main() {
-  // Skip entirely on non-interactive installs (CI, Docker builds, etc.)
-  // and on repeat installs after the welcome has already been acknowledged.
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-  if (hasSeenWelcome()) return;
+  // --force bypasses the seenWelcome + TTY checks for local testing.
+  // Otherwise: skip on non-interactive installs (CI, Docker) and on
+  // repeat installs after the welcome has already been acknowledged.
+  const force = process.argv.includes('--force');
+  if (!force && !(process.stdin.isTTY && !hasSeenWelcome())) return;
 
   await showSplash();
   teardownSplashResize();
