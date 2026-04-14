@@ -18,8 +18,8 @@ const NEEDS = [
 ];
 
 const GETS = [
-  'a .groundup/ directory with BLUEPRINT.md, GROUNDUP.md, and agent configs',
   'a README.md and .gitignore',
+  'a clean git repo pushed to develop',
   'a scaffolded project you fully own — every file in plain sight',
 ];
 
@@ -54,14 +54,14 @@ export function renderWelcomeBody() {
   console.log(amber('■ ') + white('what you\'ll need'));
   sep();
   line();
-  for (const n of NEEDS) console.log('  ' + muted('· ') + white(n));
+  for (const n of NEEDS) console.log('  ' + muted('· ' + n));
   line();
 
   sep();
   console.log(amber('■ ') + white('what you get'));
   sep();
   line();
-  for (const g of GETS) console.log('  ' + muted('· ') + white(g));
+  for (const g of GETS) console.log('  ' + muted('· ' + g));
   line();
 
   sep();
@@ -80,7 +80,7 @@ export function renderWelcomeBody() {
   line();
 
   sep();
-  console.log('  ' + muted('press any key to start'));
+  console.log('  ' + amber('› ') + muted('press any key to start'));
   sep();
 }
 
