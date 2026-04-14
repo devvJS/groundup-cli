@@ -38,46 +38,34 @@ export function renderWelcomeBody() {
   sep();
   console.log(amber('■ ') + white('welcome to groundup'));
   sep();
-  line();
   console.log(muted('  a global cli that walks you from an empty folder to a scaffolded,'));
   console.log(muted('  git-ready project — no assumptions, no lock-in.'));
-  line();
 
   sep();
   console.log(amber('■ ') + white('how it works'));
   sep();
-  line();
   for (const s of STEPS) console.log('  ' + muted(s));
-  line();
 
   sep();
   console.log(amber('■ ') + white('what you\'ll need'));
   sep();
-  line();
   for (const n of NEEDS) console.log('  ' + muted('· ' + n));
-  line();
 
   sep();
   console.log(amber('■ ') + white('what you get'));
   sep();
-  line();
   for (const g of GETS) console.log('  ' + muted('· ' + g));
-  line();
 
   sep();
   console.log(amber('■ ') + white('no lock-in'));
   sep();
-  line();
   console.log('  ' + muted('every file groundup writes is plain text you own. no hidden config,'));
   console.log('  ' + muted('no runtime dependency on groundup itself. walk away any time.'));
-  line();
 
   sep();
   console.log(amber('■ ') + white('commands'));
   sep();
-  line();
   renderCommandsList();
-  line();
 
   sep();
   console.log('  ' + amber('› ') + muted('press any key to start'));

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { showSplash, teardownSplashResize, line } from '../src/ui/splash.js';
+import { showSplash, teardownSplashResize } from '../src/ui/splash.js';
 import { renderWelcomeBody, waitForAnyKey, hasSeenWelcome, markWelcomeSeen } from '../src/ui/intro.js';
 
 // --test bypasses the seenWelcome + TTY gate, but only when run from
@@ -25,11 +25,9 @@ async function main() {
 
   await showSplash();
   teardownSplashResize();
-  line();
   renderWelcomeBody();
   await waitForAnyKey();
   markWelcomeSeen();
-  line();
 }
 
 main().catch(() => {
