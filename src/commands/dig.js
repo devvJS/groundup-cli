@@ -1,4 +1,4 @@
-import { showSplash, teardownSplashResize, line, amber, white, muted, sep } from '../ui/splash.js';
+import { showSplash, teardownSplashResize, line, amber, white, muted, sep, success } from '../ui/splash.js';
 import { sessionExists, loadSession, saveSession, updateSession, clearSession, saveInterviewProgress } from '../session/state.js';
 // DEPRECATED: replaced by AI engine in v0.2.0
 // import { runInterview } from '../interview/engine.js';
@@ -55,6 +55,13 @@ const PLATFORMS = [
 
 function narrate(verb, relPath) {
   console.log(amber('■ ') + white(verb + ' ') + muted(relPath));
+}
+
+// Single-line completion marker for a finished step. Mirrors the pattern
+// used by the interview decisions list in src/ai/interview.js.
+function stepDone(label, value) {
+  console.log(success('✓') + ' ' + white(label) + '  ' + muted(value));
+  line();
 }
 
 function installGroundupDir(projectDir, projectName, purpose, platform) {
@@ -302,7 +309,7 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     'e.g. a CLI that scaffolds new projects from nothing',
     true
   );
-  if (!prefill.purpose) { sep(); line(); }
+  if (!prefill.purpose) stepDone('what are you building?', purpose);
   saveInterviewProgress(projectDir, { purpose, phase: 'seed' });
 
   // --- seed question 2: platform ---
@@ -311,7 +318,10 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     PLATFORMS,
     'web'
   );
-  if (!prefill.platform) { sep(); line(); }
+  if (!prefill.platform) {
+    const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+    stepDone('what kind of thing?', platformLabel);
+  }
   saveInterviewProgress(projectDir, { platform, phase: 'seed' });
 
   // --- STEP 1: provider onboarding (multiselect) ---
@@ -322,8 +332,6 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
       PROVIDERS,
       ['claudecode']
     );
-    sep();
-    line();
 
     if (picks.includes('claudecode') && !claudeCodeInstalled()) {
       console.log(amber('■ ') + white('Claude Code not detected on this machine.'));
@@ -342,6 +350,12 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     }
   }
 
+  if (!prefill.providers) {
+    const providerLabels = onboardedProviders
+      .map((p) => PROVIDER_LABELS[p] ?? p)
+      .join(', ');
+    stepDone('providers selected', providerLabels);
+  }
   saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
 
   // --- API key collection for every onboarded provider that needs one ---
@@ -364,9 +378,9 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     line();
     console.log(amber('■ ') + white('Claude Code selected'));
     line();
-    console.log(muted('  Interview and build both run through your Claude Code subscription.'));
-    console.log(muted('  No per-call billing — model is managed by the CLI subprocess.'));
-    console.log(muted('  Caveat: subprocess invocation is slower than direct API streaming.'));
+    console.log(muted('  Uses your claude.ai subscription — no API cost.'));
+    console.log(muted('  Responses may be slower than direct API access'));
+    console.log(muted('  as requests route through the Claude Code subprocess.'));
     line();
     sep();
     line();
@@ -385,19 +399,20 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     line();
   }
 
+  const fmtChoice = (c) =>
+    `${PROVIDER_LABELS[c.provider]}${c.model ? ' / ' + c.model : ''}`;
+
   // --- STEP 2: interview model ---
   if (!interviewModel) {
     interviewModel = await pickModel('interview', onboardedProviders);
-    sep();
-    line();
+    stepDone('interview model', fmtChoice(interviewModel));
   }
   saveInterviewProgress(projectDir, { interviewModel, phase: 'interview' });
 
   // --- STEP 3: build model ---
   if (!buildModel) {
     buildModel = await pickModel('build', onboardedProviders);
-    sep();
-    line();
+    stepDone('build model', fmtChoice(buildModel));
   }
   saveInterviewProgress(projectDir, { buildModel, phase: 'interview' });
 
@@ -409,25 +424,33 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   });
 
   // --- Narrate final decisions ---
-  const fmtChoice = (c) =>
-    `${PROVIDER_LABELS[c.provider]}${c.model ? ' / ' + c.model : ''}`;
+  sep();
+  line();
   console.log(amber('■ ') + white('provider & model decisions'));
   line();
-  console.log(muted('  interview: ') + white(fmtChoice(interviewModel)));
-  console.log(muted('  build:     ') + white(fmtChoice(buildModel)));
+  console.log(white('  interview:') + ' ' + muted(fmtChoice(interviewModel)));
+  console.log(white('  build:    ') + ' ' + muted(fmtChoice(buildModel)));
   line();
   sep();
   line();
 
   const provider = interviewModel.provider;
 
-  // --- agent multiselect ---
-  const agents = prefill.agents ?? await askMultiselect(
-    'Which AI coding agents will you use on this project?',
-    AGENTS,
-    ['claudecode']
-  );
-  if (!prefill.agents) { sep(); line(); }
+  // --- agent multiselect (skipped when Claude Code is the only provider) ---
+  let agents = prefill.agents;
+  if (onlyClaudeCode) {
+    agents = agents ?? ['claudecode'];
+  } else if (!agents) {
+    agents = await askMultiselect(
+      'Which AI coding agents will you use on this project?',
+      AGENTS,
+      ['claudecode']
+    );
+    const agentLabels = agents
+      .map((a) => AGENTS.find((x) => x.value === a)?.label ?? a)
+      .join(', ');
+    stepDone('agents selected', agentLabels);
+  }
   saveInterviewProgress(projectDir, { agents, phase: 'interview' });
 
   // --- install .groundup/ (templates + .gitignore) and agent dirs ---
