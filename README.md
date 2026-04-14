@@ -1,5 +1,7 @@
 # groundup
 
+![groundup](docs/splash.png)
+
 > build from nothing. ⚒️
 
 A global CLI that takes a developer from an empty folder to a scaffolded, git-ready project through a conversational AI interview. No config. No assumptions. Never leaves the terminal.
