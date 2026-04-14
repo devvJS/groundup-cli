@@ -329,7 +329,7 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     const picks = await askMultiselect(
       'Which AI providers do you want to use on this project?',
       PROVIDERS,
-      ['claudecode']
+      []
     );
 
     if (picks.includes('claudecode') && !claudeCodeInstalled()) {
@@ -355,12 +355,7 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   activityLog.record('providers selected', providerLabels);
   saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
 
-  // --- API key collection for every onboarded provider that needs one ---
-  for (const p of onboardedProviders) {
-    await ensureProviderKey(p);
-  }
-
-  // --- Special-case callouts ---
+  // --- Special-case flags ---
   const onlyClaudeCode =
     onboardedProviders.length === 1 && onboardedProviders[0] === 'claudecode';
   const pairClaudeCodeAndClaude =
@@ -371,6 +366,8 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   let interviewModel = prefill.interviewModel ?? null;
   let buildModel = prefill.buildModel ?? null;
 
+  // --- Claude Code callout rendered immediately on provider confirmation ---
+  // so the user can read it before the thinking screen clears the terminal.
   if (onlyClaudeCode) {
     line();
     console.log(amber('■ ') + white('Claude Code selected'));
@@ -383,7 +380,15 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
     line();
     interviewModel = interviewModel ?? { provider: 'claudecode', model: null };
     buildModel = buildModel ?? { provider: 'claudecode', model: null };
-  } else if (pairClaudeCodeAndClaude && !interviewModel && !buildModel) {
+    await sleep(1500);
+  }
+
+  // --- API key collection for every onboarded provider that needs one ---
+  for (const p of onboardedProviders) {
+    await ensureProviderKey(p);
+  }
+
+  if (pairClaudeCodeAndClaude && !prefill.interviewModel && !prefill.buildModel) {
     line();
     console.log(amber('■ ') + white('Claude Code + Anthropic API selected'));
     line();
@@ -443,6 +448,9 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   // The thinking screen (started inside runAIInterview) is the single source
   // of truth for activity from here forward — fs installs run live inside it
   // via preInstalls, and every seed decision above already lives in the log.
+  // Full terminal clear so the thinking screen starts on a clean slate —
+  // seed/provider/model scroll is wiped before the unified view takes over.
+  process.stdout.write('\x1B[2J\x1B[H');
   try {
     await runAIInterview({ purpose, platform }, provider, projectDir, priorHistory, {
       activityLog,
