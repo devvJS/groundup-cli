@@ -32,6 +32,9 @@ export async function resume() {
     purpose: session.interview?.purpose ?? session.seed?.purpose,
     platform: session.interview?.platform ?? session.seed?.platform,
     provider: session.interview?.provider ?? session.ai?.provider,
+    providers: session.interview?.providers,
+    interviewModel: session.interview?.interviewModel,
+    buildModel: session.interview?.buildModel,
     agents: session.interview?.agents,
   };
 

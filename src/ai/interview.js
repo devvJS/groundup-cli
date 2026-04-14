@@ -733,7 +733,15 @@ function buildResumeMessage(priorHistory) {
 }
 
 export async function runAIInterview(seedAnswers, providerName, projectDir, priorHistory = []) {
-  const provider = getProvider(providerName);
+  // Prefer the explicit interview model stored in session; fall back to the
+  // provider's DEFAULT_MODEL if no selection was made (legacy sessions).
+  let selectedModel = null;
+  try {
+    const s = loadSession(projectDir);
+    const im = s?.interview?.interviewModel;
+    if (im && im.provider === providerName) selectedModel = im.model;
+  } catch {}
+  const provider = getProvider(providerName, selectedModel);
 
   let resumeHistory = priorHistory;
 

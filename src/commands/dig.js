@@ -11,6 +11,7 @@ import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
+import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -138,6 +139,48 @@ function installAgentDirs(projectDir, agents) {
   line();
   sep();
   line();
+}
+
+async function pickModel(phase, onboardedProviders) {
+  const candidates = modelsForPhase(phase, onboardedProviders);
+  if (candidates.length === 0) {
+    throw new Error(`No models available for phase ${phase}. Onboard at least one provider.`);
+  }
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    console.log(
+      muted(`  Only one ${phase} model available: `) +
+      white(`${PROVIDER_LABELS[c.provider]} — ${c.label}`)
+    );
+    line();
+    return { provider: c.provider, model: c.model };
+  }
+
+  const rec = recommendedFor(phase, onboardedProviders);
+  const options = candidates.map((c) => {
+    const hintParts = [];
+    if (c.recommended) hintParts.push('recommended');
+    hintParts.push(c.cost);
+    return {
+      value: `${c.provider}::${c.model ?? ''}`,
+      label: `${PROVIDER_LABELS[c.provider]} — ${c.label}`,
+      hint: hintParts.join(' · '),
+    };
+  });
+  const defaultVal = rec
+    ? `${rec.provider}::${rec.model ?? ''}`
+    : options[0].value;
+
+  const phaseLabel = phase === 'interview' ? 'Interview model' : 'Build model';
+  const pick = await askSelect(
+    `${phaseLabel} — which model should run the ${phase} phase?`,
+    options,
+    defaultVal
+  );
+  const idx = pick.indexOf('::');
+  const providerName = pick.slice(0, idx);
+  const modelName = pick.slice(idx + 2);
+  return { provider: providerName, model: modelName === '' ? null : modelName };
 }
 
 async function ensureProviderKey(provider) {
@@ -271,31 +314,112 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   if (!prefill.platform) { sep(); line(); }
   saveInterviewProgress(projectDir, { platform, phase: 'seed' });
 
-  // --- provider selection ---
-  let provider = prefill.provider;
-  if (!provider) {
-    while (true) {
-      provider = await askSelect(
-        'Which AI agent should run your interview?',
-        PROVIDERS,
-        'claudecode'
-      );
-      sep();
+  // --- STEP 1: provider onboarding (multiselect) ---
+  let onboardedProviders = prefill.providers;
+  while (!onboardedProviders || onboardedProviders.length === 0) {
+    const picks = await askMultiselect(
+      'Which AI providers do you want to use on this project?',
+      PROVIDERS,
+      ['claudecode']
+    );
+    sep();
+    line();
+
+    if (picks.includes('claudecode') && !claudeCodeInstalled()) {
+      console.log(amber('■ ') + white('Claude Code not detected on this machine.'));
+      console.log(amber('  → ') + white(`Install it at: ${CLAUDE_CODE_INSTALL_URL}`));
+      console.log(muted('  Removing Claude Code from your selection.'));
       line();
-      if (provider === 'claudecode' && !claudeCodeInstalled()) {
-        console.log(amber('■ ') + white('Claude Code not detected on this machine.'));
-        console.log(amber('  → ') + white(`Install it at: ${CLAUDE_CODE_INSTALL_URL}`));
-        console.log(muted('  Or pick another provider.'));
-        line();
-        provider = null;
-        continue;
-      }
-      break;
+      onboardedProviders = picks.filter((p) => p !== 'claudecode');
+    } else {
+      onboardedProviders = picks;
+    }
+
+    if (onboardedProviders.length === 0) {
+      console.log(amber('■ ') + white('Pick at least one provider to continue.'));
+      line();
+      onboardedProviders = null;
     }
   }
 
-  await ensureProviderKey(provider);
-  saveInterviewProgress(projectDir, { provider, phase: 'interview' });
+  saveInterviewProgress(projectDir, { providers: onboardedProviders, phase: 'interview' });
+
+  // --- API key collection for every onboarded provider that needs one ---
+  for (const p of onboardedProviders) {
+    await ensureProviderKey(p);
+  }
+
+  // --- Special-case callouts ---
+  const onlyClaudeCode =
+    onboardedProviders.length === 1 && onboardedProviders[0] === 'claudecode';
+  const pairClaudeCodeAndClaude =
+    onboardedProviders.length === 2 &&
+    onboardedProviders.includes('claudecode') &&
+    onboardedProviders.includes('claude');
+
+  let interviewModel = prefill.interviewModel ?? null;
+  let buildModel = prefill.buildModel ?? null;
+
+  if (onlyClaudeCode) {
+    line();
+    console.log(amber('■ ') + white('Claude Code selected'));
+    line();
+    console.log(muted('  Interview and build both run through your Claude Code subscription.'));
+    console.log(muted('  No per-call billing — model is managed by the CLI subprocess.'));
+    console.log(muted('  Caveat: subprocess invocation is slower than direct API streaming.'));
+    line();
+    sep();
+    line();
+    interviewModel = interviewModel ?? { provider: 'claudecode', model: null };
+    buildModel = buildModel ?? { provider: 'claudecode', model: null };
+  } else if (pairClaudeCodeAndClaude && !interviewModel && !buildModel) {
+    line();
+    console.log(amber('■ ') + white('Claude Code + Anthropic API selected'));
+    line();
+    console.log(muted('  Both run the same Claude model family — billing differs:'));
+    console.log(muted('    · Claude Code   — subscription, no per-call charges, subprocess speed'));
+    console.log(muted('    · Anthropic API — per-token billing, lower latency'));
+    console.log(muted('  You can mix them per phase below.'));
+    line();
+    sep();
+    line();
+  }
+
+  // --- STEP 2: interview model ---
+  if (!interviewModel) {
+    interviewModel = await pickModel('interview', onboardedProviders);
+    sep();
+    line();
+  }
+  saveInterviewProgress(projectDir, { interviewModel, phase: 'interview' });
+
+  // --- STEP 3: build model ---
+  if (!buildModel) {
+    buildModel = await pickModel('build', onboardedProviders);
+    sep();
+    line();
+  }
+  saveInterviewProgress(projectDir, { buildModel, phase: 'interview' });
+
+  // Keep legacy session.interview.provider field in sync so continue.js and
+  // other pre-model-select code paths still work.
+  saveInterviewProgress(projectDir, {
+    provider: interviewModel.provider,
+    phase: 'interview',
+  });
+
+  // --- Narrate final decisions ---
+  const fmtChoice = (c) =>
+    `${PROVIDER_LABELS[c.provider]}${c.model ? ' / ' + c.model : ''}`;
+  console.log(amber('■ ') + white('provider & model decisions'));
+  line();
+  console.log(muted('  interview: ') + white(fmtChoice(interviewModel)));
+  console.log(muted('  build:     ') + white(fmtChoice(buildModel)));
+  line();
+  sep();
+  line();
+
+  const provider = interviewModel.provider;
 
   // --- agent multiselect ---
   const agents = prefill.agents ?? await askMultiselect(
