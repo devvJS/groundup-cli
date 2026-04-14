@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import { dig } from '../src/commands/dig.js';
 import { resume } from '../src/commands/continue.js';
 import { siteClear } from '../src/commands/site.js';
+import { foreman } from '../src/commands/foreman.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -35,8 +36,8 @@ program
   .action(siteClear);
 
 program
-  .command('foreman [cmd]')
-  .description('Full command reference — contextual help for any command')
-  .action(() => console.log('foreman coming in phase 2'));
+  .command('foreman')
+  .description('Full command reference and help')
+  .action(foreman);
 
 program.parse(process.argv);

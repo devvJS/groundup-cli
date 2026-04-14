@@ -1,9 +1,11 @@
-import { amber, white, muted, warning, line, success } from './splash.js';
+import { amber, white, muted, warning, line, success, sep } from './splash.js';
+import { paintCommandsOverlay, dismissCommandsOverlay } from './commands.js';
 
 function buildSelectHint(hasDecisions) {
   return '  ' + amber('↑ ↓') + ' ' + success('navigate') +
     '   ' + amber('enter') + ' ' + success('confirm') +
     '   ' + amber('h') + ' ' + warning('help') +
+    '   ' + amber('/') + ' ' + success('commands') +
     (hasDecisions ? '   ' + amber('ctrl+o') + ' ' + success('expand decisions') : '');
 }
 
@@ -12,8 +14,10 @@ function buildMultiselectHint(hasDecisions) {
     '   ' + amber('space') + ' ' + success('select/deselect') +
     '   ' + amber('enter') + ' ' + success('confirm') +
     '   ' + amber('h') + ' ' + warning('help') +
+    '   ' + amber('/') + ' ' + success('commands') +
     (hasDecisions ? '   ' + amber('ctrl+o') + ' ' + success('expand decisions') : '');
 }
+
 
 const AMBER_SGR = '\x1b[38;2;245;166;35m';
 const RESET_SGR = '\x1b[0m';
@@ -245,6 +249,13 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
           continue;
         }
 
+        if (mode === 'commands') {
+          dismissCommandsOverlay();
+          mode = 'input';
+          i++;
+          continue;
+        }
+
         if (mode === 'confirm-quit') {
           if (byte === 0x79 || byte === 0x59) {
             teardown();
@@ -261,6 +272,14 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
         // ctrl+c
         if (byte === 0x03) {
           showConfirmQuit();
+          i++;
+          continue;
+        }
+
+        // / → commands overlay
+        if (byte === 0x2f) {
+          mode = 'commands';
+          paintCommandsOverlay();
           i++;
           continue;
         }
@@ -443,6 +462,13 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
           continue;
         }
 
+        if (mode === 'commands') {
+          dismissCommandsOverlay();
+          mode = 'input';
+          i++;
+          continue;
+        }
+
         if (mode === 'confirm-quit') {
           if (byte === 0x79 || byte === 0x59) {
             teardown();
@@ -458,6 +484,14 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
 
         if (byte === 0x03) {
           showConfirmQuit();
+          i++;
+          continue;
+        }
+
+        // / → commands overlay
+        if (byte === 0x2f) {
+          mode = 'commands';
+          paintCommandsOverlay();
           i++;
           continue;
         }
