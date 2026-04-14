@@ -32,6 +32,7 @@ export async function resume() {
     purpose: session.interview?.purpose ?? session.seed?.purpose,
     platform: session.interview?.platform ?? session.seed?.platform,
     provider: session.interview?.provider ?? session.ai?.provider,
+    agents: session.interview?.agents,
   };
 
   switch (session.phase) {
@@ -54,10 +55,10 @@ export async function resume() {
     }
 
     case 'blueprint': {
-      const blueprintPath = path.join(projectDir, 'BLUEPRINT.md');
+      const blueprintPath = path.join(projectDir, '.groundup', 'BLUEPRINT.md');
       const priorHistory = session.interview?.answers ?? session.interview?.history ?? [];
 
-      // If BLUEPRINT.md is missing we can't review it — fall back to resuming
+      // If .groundup/BLUEPRINT.md is missing we can't review it — fall back to resuming
       // the interview with whatever history we already collected.
       const blueprintExists =
         fs.existsSync(blueprintPath) && fs.readFileSync(blueprintPath, 'utf-8').trim().length > 0;
@@ -81,7 +82,7 @@ export async function resume() {
         return;
       }
 
-      // Interview is done, BLUEPRINT.md exists — jump straight to approval.
+      // Interview is done, .groundup/BLUEPRINT.md exists — jump straight to approval.
       const result = await reviewBlueprint(projectDir, priorHistory);
       if (result === 'approved') {
         line();
@@ -94,7 +95,7 @@ export async function resume() {
         await runRepoSetup(projectDir);
         return;
       }
-      // 'restart' — wipe BLUEPRINT.md, fall back through a fresh interview.
+      // 'restart' — wipe .groundup/BLUEPRINT.md, fall back through a fresh interview.
       try {
         fs.writeFileSync(blueprintPath, '');
       } catch {}

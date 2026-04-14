@@ -7,7 +7,7 @@ import { sessionExists, loadSession, saveSession, updateSession, clearSession, s
 // import { runBlueprint } from './blueprint.js';
 import { runRepoSetup } from './repo.js';
 import { resume } from './continue.js';
-import { askSelect, askText } from '../ui/input.js';
+import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
@@ -34,6 +34,14 @@ const PROVIDER_KEY_URLS = {
   gemini: 'https://aistudio.google.com/apikey',
 };
 
+const AGENTS = [
+  { value: 'claudecode', label: 'Claude Code' },
+  { value: 'cursor', label: 'Cursor' },
+  { value: 'copilot', label: 'GitHub Copilot' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'other', label: 'Other' },
+];
+
 const PLATFORMS = [
   { value: 'web', label: 'Web app' },
   { value: 'mobile', label: 'Mobile app' },
@@ -44,23 +52,92 @@ const PLATFORMS = [
   { value: 'other', label: 'Something else' },
 ];
 
-function installTemplates(projectDir, projectName, purpose, platform) {
-  const groundupSrc = path.join(PLANS_DIR, 'GROUNDUP.md');
-  const blueprintSrc = path.join(PLANS_DIR, 'BLUEPRINT.md');
+function narrate(verb, relPath) {
+  console.log(amber('■ ') + white(verb + ' ') + muted(relPath));
+}
 
-  if (fs.existsSync(groundupSrc)) {
-    fs.copyFileSync(groundupSrc, path.join(projectDir, 'GROUNDUP.md'));
+function installGroundupDir(projectDir, projectName, purpose, platform) {
+  console.log(amber('■ ') + white('setting up .groundup/'));
+  line();
+
+  const groundupDir = path.join(projectDir, '.groundup');
+  if (!fs.existsSync(groundupDir)) {
+    fs.mkdirSync(groundupDir, { recursive: true });
+    narrate('created', '.groundup/');
   }
 
-  if (fs.existsSync(blueprintSrc)) {
+  const groundupSrc = path.join(PLANS_DIR, 'GROUNDUP.md');
+  const groundupDest = path.join(groundupDir, 'GROUNDUP.md');
+  if (fs.existsSync(groundupSrc) && !fs.existsSync(groundupDest)) {
+    fs.copyFileSync(groundupSrc, groundupDest);
+    narrate('wrote', '.groundup/GROUNDUP.md');
+  }
+
+  const blueprintSrc = path.join(PLANS_DIR, 'BLUEPRINT.md');
+  const blueprintDest = path.join(groundupDir, 'BLUEPRINT.md');
+  if (fs.existsSync(blueprintSrc) && !fs.existsSync(blueprintDest)) {
     const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
     const filled = fs
       .readFileSync(blueprintSrc, 'utf-8')
       .replace('[project-name]', projectName)
       .replace('[purpose — one sentence, filled from seed question 1]', purpose)
       .replace('[filled from seed question 2]', platformLabel);
-    fs.writeFileSync(path.join(projectDir, 'BLUEPRINT.md'), filled);
+    fs.writeFileSync(blueprintDest, filled);
+    narrate('wrote', '.groundup/BLUEPRINT.md');
   }
+
+  const gitignorePath = path.join(projectDir, '.gitignore');
+  const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
+  const alreadyIgnored = existing
+    .split('\n')
+    .map((l) => l.trim())
+    .some((l) => l === '.groundup/' || l === '.groundup');
+  if (!alreadyIgnored) {
+    const prefix = existing.length && !existing.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(gitignorePath, existing + prefix + '.groundup/\n');
+    narrate(existing ? 'updated' : 'created', '.gitignore (+ .groundup/)');
+  }
+
+  line();
+  sep();
+  line();
+}
+
+function installAgentDirs(projectDir, agents) {
+  if (!agents || agents.length === 0) return;
+
+  console.log(amber('■ ') + white('scaffolding agent directories'));
+  line();
+
+  const agentsRoot = path.join(projectDir, '.groundup', 'agents');
+  if (!fs.existsSync(agentsRoot)) {
+    fs.mkdirSync(agentsRoot, { recursive: true });
+    narrate('created', '.groundup/agents/');
+  }
+
+  for (const agent of agents) {
+    const dir = path.join(agentsRoot, agent);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      narrate('created', `.groundup/agents/${agent}/`);
+    }
+    const agentMd = path.join(dir, 'AGENT.md');
+    if (!fs.existsSync(agentMd)) {
+      const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
+      fs.writeFileSync(agentMd, `# ${label}\n\nAgent configuration placeholder.\n`);
+      narrate('wrote', `.groundup/agents/${agent}/AGENT.md`);
+    }
+    const skillsMd = path.join(dir, 'SKILLS.md');
+    if (!fs.existsSync(skillsMd)) {
+      const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
+      fs.writeFileSync(skillsMd, `# ${label} — skills\n\nSkill list placeholder.\n`);
+      narrate('wrote', `.groundup/agents/${agent}/SKILLS.md`);
+    }
+  }
+
+  line();
+  sep();
+  line();
 }
 
 async function ensureProviderKey(provider) {
@@ -220,8 +297,18 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   await ensureProviderKey(provider);
   saveInterviewProgress(projectDir, { provider, phase: 'interview' });
 
-  // --- install plan templates into the project dir (idempotent) ---
-  installTemplates(projectDir, projectName, purpose, platform);
+  // --- agent multiselect ---
+  const agents = prefill.agents ?? await askMultiselect(
+    'Which AI coding agents will you use on this project?',
+    AGENTS,
+    ['claudecode']
+  );
+  if (!prefill.agents) { sep(); line(); }
+  saveInterviewProgress(projectDir, { agents, phase: 'interview' });
+
+  // --- install .groundup/ (templates + .gitignore) and agent dirs ---
+  installGroundupDir(projectDir, projectName, purpose, platform);
+  installAgentDirs(projectDir, agents);
 
   // --- phase: AI interview ---
   try {

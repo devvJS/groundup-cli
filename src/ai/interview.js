@@ -38,7 +38,7 @@ When the developer selects "Help me choose":
 - Then the turn after that, send the next question as if the developer had answered with your chosen option, and note the auto-chosen value in SUBTEXT of that next question
 
 When the developer selects "Not sure yet":
-- Mark the question as an open decision in BLUEPRINT.md under an "Open Questions" section
+- Mark the question as an open decision in .groundup/BLUEPRINT.md under an "Open Questions" section
 - Move on to the next question
 
 When you have enough to write a complete blueprint, respond with exactly:
@@ -189,7 +189,7 @@ const HELP_THINKING_MESSAGES = [
 const DEFAULT_EST_TOKENS = 800;
 
 // Once INTERVIEW_COMPLETE is detected, updateBlueprint() becomes a no-op so
-// the finalized BLUEPRINT.md can only be changed via the Edit option in
+// the finalized .groundup/BLUEPRINT.md can only be changed via the Edit option in
 // reviewBlueprint() (which opens the developer's own editor). Reset at the
 // top of every runAIInterview() call.
 let blueprintLocked = false;
@@ -395,13 +395,20 @@ async function collectStreamWithThinking(provider, messages, system, indicator) 
   return full;
 }
 
+function blueprintPathFor(projectDir) {
+  return path.join(projectDir, '.groundup', 'BLUEPRINT.md');
+}
+
 function readBlueprint(projectDir) {
-  const p = path.join(projectDir, 'BLUEPRINT.md');
+  const p = blueprintPathFor(projectDir);
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '';
 }
 
 function writeBlueprint(projectDir, content) {
-  fs.writeFileSync(path.join(projectDir, 'BLUEPRINT.md'), content);
+  const p = blueprintPathFor(projectDir);
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(p, content);
 }
 
 function cleanBlueprint(text) {
@@ -427,7 +434,7 @@ async function updateBlueprint(provider, projectDir, conversationHistory, indica
     .map((h) => `Q: ${h.question}\nA: ${Array.isArray(h.answer) ? h.answer.join(', ') : h.answer}`)
     .join('\n\n');
 
-  const prompt = `Based on the interview so far, update BLUEPRINT.md. Return only the complete updated markdown content of the file. No code fences. No commentary.
+  const prompt = `Based on the interview so far, update .groundup/BLUEPRINT.md. Return only the complete updated markdown content of the file. No code fences. No commentary.
 
 CURRENT BLUEPRINT:
 ${current}
@@ -439,7 +446,7 @@ ${transcript}`;
     let full = '';
     for await (const chunk of provider.stream(
       [{ role: 'user', content: prompt }],
-      'You maintain a project BLUEPRINT.md file. Return only the updated markdown content — no code fences, no commentary.'
+      'You maintain a project .groundup/BLUEPRINT.md file. Return only the updated markdown content — no code fences, no commentary.'
     )) {
       full += chunk;
       if (indicator) indicator.addTokens(Math.max(1, Math.ceil(chunk.length / 4)));
@@ -705,13 +712,13 @@ export async function reviewBlueprint(projectDir, history = []) {
       [
         { value: 'yes', label: 'Yes — approve and continue' },
         { value: 'no', label: 'No — restart the interview' },
-        { value: 'edit', label: 'Edit — open BLUEPRINT.md in default editor then re-review' },
+        { value: 'edit', label: 'Edit — open .groundup/BLUEPRINT.md in default editor then re-review' },
       ],
       'yes'
     );
     if (choice === 'yes') return 'approved';
     if (choice === 'no') return 'restart';
-    await openInEditor(path.join(projectDir, 'BLUEPRINT.md'));
+    await openInEditor(blueprintPathFor(projectDir));
   }
 }
 
@@ -809,9 +816,9 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
       line();
       return history;
     }
-    // restart: wipe BLUEPRINT.md body, loop back into interview
+    // restart: wipe .groundup/BLUEPRINT.md body, loop back into interview
     try {
-      fs.writeFileSync(path.join(projectDir, 'BLUEPRINT.md'), '');
+      writeBlueprint(projectDir, '');
     } catch {}
   }
 }
