@@ -57,25 +57,39 @@ export function hint(text) {
   console.log(muted('  ' + text));
 }
 
-const MIN_COLS = 100;
+// Two breakpoints:
+//   HARD_MIN  — below this, groundup refuses to render and blocks until
+//               the terminal is widened.
+//   ASCII_MIN — below this we still run, but drop the GROUND/UP ASCII
+//               art and render a compact brand bar instead.
+const HARD_MIN = 80;
+const ASCII_MIN = 100;
+export const MIN_COLS = HARD_MIN;
 let splashResizeHandler = null;
 
 function renderWidthWarning() {
   process.stdout.write('\x1B[2J\x1B[H');
   line();
   console.log(amber('■') + ' ' + white('groundup needs a wider terminal.'));
-  console.log(muted('minimum width: 100 columns — current: ' + (process.stdout.columns || 0)));
+  console.log(muted(`minimum width: ${HARD_MIN} columns — current: ` + (process.stdout.columns || 0)));
   console.log(muted('please widen your terminal to continue.'));
   line();
 }
 
 export function checkMinWidth() {
   const cols = process.stdout.columns || 0;
-  if (cols < MIN_COLS) {
+  if (cols < HARD_MIN) {
     renderWidthWarning();
     return false;
   }
   return true;
+}
+
+export function widthTier() {
+  const cols = process.stdout.columns || 0;
+  if (cols < HARD_MIN) return 'hard';
+  if (cols < ASCII_MIN) return 'compact';
+  return 'full';
 }
 
 export function teardownSplashResize() {
@@ -88,7 +102,7 @@ export function teardownSplashResize() {
 function waitForWidth() {
   return new Promise((resolve) => {
     const check = () => {
-      if ((process.stdout.columns || 0) >= MIN_COLS) {
+      if ((process.stdout.columns || 0) >= HARD_MIN) {
         process.stdout.off('resize', onResize);
         resolve();
       } else {
@@ -98,6 +112,18 @@ function waitForWidth() {
     const onResize = () => check();
     process.stdout.on('resize', onResize);
   });
+}
+
+// Compact brand bar — rendered between HARD_MIN and ASCII_MIN columns
+// when the GROUND/UP ASCII art can't fit but we still want a branded
+// header. No box drawing, no ascii logo.
+function renderCompactSplashBody() {
+  sep();
+  console.log(
+    '  ' + amber('■') + ' ' + white('groundup ⚒️') + '  ' + muted(`build from nothing. v${version}`)
+  );
+  sep();
+  line();
 }
 
 function renderSplashBody() {
@@ -133,25 +159,33 @@ function renderSplashBody() {
   line();
 }
 
+function paintForCurrentTier() {
+  if (widthTier() === 'compact') {
+    renderCompactSplashBody();
+  } else {
+    renderSplashBody();
+  }
+}
+
 export async function showSplash() {
   process.stdout.write('\x1B[2J\x1B[H');
 
-  if ((process.stdout.columns || 0) < MIN_COLS) {
+  if (widthTier() === 'hard') {
     renderWidthWarning();
     await waitForWidth();
     process.stdout.write('\x1B[2J\x1B[H');
   }
 
-  renderSplashBody();
+  paintForCurrentTier();
 
   teardownSplashResize();
   splashResizeHandler = () => {
-    if ((process.stdout.columns || 0) < MIN_COLS) {
+    if (widthTier() === 'hard') {
       renderWidthWarning();
       return;
     }
     process.stdout.write('\x1B[2J\x1B[H');
-    renderSplashBody();
+    paintForCurrentTier();
   };
   process.stdout.on('resize', splashResizeHandler);
 }
