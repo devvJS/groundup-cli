@@ -172,7 +172,7 @@ async function pickModel(phase, onboardedProviders) {
   const options = candidates.map((c) => {
     const hintParts = [];
     if (c.recommended) hintParts.push('recommended');
-    hintParts.push(c.cost);
+    hintParts.push(c.descriptor);
     return {
       value: `${c.provider}::${c.model ?? ''}`,
       label: `${PROVIDER_LABELS[c.provider]} — ${c.label}`,
