@@ -57,12 +57,11 @@ function repoFailed(projectDir, host, err) {
 // --- universal git setup -----------------------------------------------------
 
 function ensureGitRepo(projectDir) {
-  // 1. init if needed — use inherit so we can see the init output
+  // 1. init if needed — -q suppresses the default-branch-name hint block
+  // that git prints to stderr on first init. Output is captured via run()
+  // so nothing leaks into the narrated repo flow.
   if (!runQuiet('git', ['rev-parse', '--git-dir'], projectDir)) {
-    const initRes = spawnSync('git', ['init'], { cwd: projectDir, stdio: 'inherit' });
-    if (initRes.status !== 0) {
-      throw new Error(`git init failed in ${projectDir} (exit ${initRes.status})`);
-    }
+    run('git', ['init', '-q'], projectDir);
   }
 
   // 2. develop branch
