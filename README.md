@@ -93,8 +93,9 @@ That's it. groundup takes it from there.
 | Claude Code | Local — uses your claude.ai subscription |
 | Anthropic API | claude-sonnet / claude-opus |
 | OpenAI | gpt-4o / gpt-4o-mini |
-| Gemini | gemini-1.5-pro / flash |
+| Gemini | gemini-2.5-pro / flash |
 | Ollama | Local — llama3 |
+| GitHub Copilot | Coming soon |
 
 ---
 
