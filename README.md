@@ -59,6 +59,7 @@ That's it. groundup takes it from there.
 | `groundup site` | View current session details |
 | `groundup site-clear` | Discard session and start fresh |
 | `groundup foreman` | Full command reference and help |
+| `groundup update-models` | Refresh available models from provider APIs |
 
 ---
 
