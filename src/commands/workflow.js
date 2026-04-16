@@ -99,8 +99,10 @@ async function renderWorkflowReview(markdown) {
   }
 
   // Content exceeds terminal — page through less
+  console.log(muted('  ↑ ↓ scroll   q exit'));
+  line();
   return new Promise((resolve) => {
-    const pager = spawn('less', ['-R', '-F', '-X'], {
+    const pager = spawn('less', ['-R', '-F', '-X', '-P', '── end of workflow · q to exit ──'], {
       stdio: ['pipe', 'inherit', 'inherit'],
     });
     pager.stdin.write(content);
@@ -201,10 +203,9 @@ export async function generateWorkflow({ projectRoot }) {
     line();
     sep();
     line();
-    console.log(white('How does the workflow look?'));
 
     const choice = await askSelect(
-      '',
+      'How does the workflow look?',
       [
         { value: 'approve', label: 'Approve — continue to build' },
         { value: 'regenerate', label: 'Regenerate — provide feedback and try again' },
