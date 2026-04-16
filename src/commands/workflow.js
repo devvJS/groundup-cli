@@ -5,43 +5,100 @@ import { getProvider } from '../ai/index.js';
 import { buildWorkflowPrompt } from '../ai/prompts/workflow.js';
 import { loadSession } from '../session/state.js';
 import { askSelect, askText } from '../ui/input.js';
-import { renderMarkdown } from '../ui/markdown.js';
-import { amber, white, muted, line, sep } from '../ui/splash.js';
+import { amber, white, muted, success, line, sep } from '../ui/splash.js';
+
+// Workflow-aware markdown renderer. Applies project color tokens to
+// phase headers, section labels, and body text per the workflow palette.
+function renderWorkflowMarkdown(text) {
+  const srcLines = String(text || '').split('\n');
+  const cols = process.stdout.columns || 80;
+  const output = [];
+
+  for (let i = 0; i < srcLines.length; i++) {
+    const raw = srcLines[i];
+    const trimmed = raw.trim();
+
+    if (!trimmed) { output.push(''); continue; }
+
+    // --- h1: # WORKFLOW.md → amber full-width bar + title + bar ---
+    if (/^#\s+/.test(trimmed)) {
+      const content = trimmed.replace(/^#\s+/, '');
+      output.push('');
+      output.push(amber('━'.repeat(cols)));
+      output.push(amber(content.toUpperCase()));
+      output.push(amber('━'.repeat(cols)));
+      output.push('');
+      continue;
+    }
+
+    // --- h2: ## Phase N: Title → amber bold + muted underline ---
+    if (/^##\s+/.test(trimmed)) {
+      const content = trimmed.replace(/^##\s+/, '');
+      output.push('');
+      output.push(amber(content));
+      output.push(muted('─'.repeat(content.length)));
+      continue;
+    }
+
+    // --- dependency note: (assumes Phase N is complete) ---
+    if (/^\(assumes\s+Phase\s+\d/i.test(trimmed)) {
+      output.push(muted('  ' + trimmed));
+      continue;
+    }
+
+    // --- section labels: **Goal:** / **Acceptance criteria:** / **Tasks:** ---
+    const labelMatch = trimmed.match(/^\*\*(.+?):\*\*\s*(.*)/);
+    if (labelMatch) {
+      const label = labelMatch[1] + ':';
+      const rest = labelMatch[2];
+      output.push(success(label) + (rest ? ' ' + white(rest) : ''));
+      continue;
+    }
+
+    // --- acceptance criteria bullets: - criterion ---
+    if (/^[-*]\s+/.test(trimmed) && !/^- \[[ x]\]/.test(trimmed)) {
+      const content = trimmed.replace(/^[-*]\s+/, '');
+      output.push(amber('  ■') + ' ' + white(content));
+      continue;
+    }
+
+    // --- task checkboxes: - [ ] task description ---
+    if (/^- \[ \]\s+/.test(trimmed)) {
+      const content = trimmed.replace(/^- \[ \]\s+/, '');
+      output.push(muted('  □') + ' ' + white(content));
+      continue;
+    }
+
+    // --- completed task checkboxes: - [x] task description ---
+    if (/^- \[x\]\s+/i.test(trimmed)) {
+      const content = trimmed.replace(/^- \[x\]\s+/i, '');
+      output.push(success('  ■') + ' ' + white(content));
+      continue;
+    }
+
+    // --- everything else: plain white ---
+    output.push(white(trimmed));
+  }
+
+  return output;
+}
 
 // Render workflow markdown, paging through `less` when it exceeds terminal height.
 async function renderWorkflowReview(markdown) {
-  // Capture renderMarkdown output to a string so we can measure line count.
-  const lines = [];
-  const origWrite = process.stdout.write.bind(process.stdout);
-  const origLog = console.log;
-  console.log = (...args) => { lines.push(args.join(' ')); };
-  process.stdout.write = (chunk) => {
-    // write() chunks don't always end with \n — accumulate into current line
-    const str = String(chunk);
-    const parts = str.split('\n');
-    if (lines.length === 0) lines.push('');
-    lines[lines.length - 1] += parts[0];
-    for (let i = 1; i < parts.length; i++) lines.push(parts[i]);
-    return true;
-  };
-
-  renderMarkdown(markdown);
-
-  console.log = origLog;
-  process.stdout.write = origWrite;
+  const lines = renderWorkflowMarkdown(markdown);
 
   const termRows = process.stdout.rows || 24;
   // Reserve rows for the separator + question + select prompt that follow
   const available = termRows - 6;
+  const content = lines.join('\n');
 
   if (lines.length <= available) {
     // Fits on screen — render inline
-    for (const l of lines) origWrite(l + '\n');
+    console.log(content);
     return;
   }
 
   // Content exceeds terminal — page through less
-  const content = lines.join('\n');
   return new Promise((resolve) => {
     const pager = spawn('less', ['-R', '-F', '-X'], {
       stdio: ['pipe', 'inherit', 'inherit'],
@@ -51,7 +108,7 @@ async function renderWorkflowReview(markdown) {
     pager.on('close', () => resolve());
     pager.on('error', () => {
       // less not available — fall back to inline
-      origWrite(content + '\n');
+      console.log(content);
       resolve();
     });
   });
