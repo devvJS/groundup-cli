@@ -20,19 +20,19 @@ export const MODELS = {
   ],
   claude: [
     {
-      value: 'claude-opus-4-5',
-      label: 'Claude Opus 4.5',
+      value: 'claude-opus-4-6',
+      label: 'Claude Opus 4.6',
       descriptor: '200K context · most capable',
       recommendedFor: ['build'],
     },
     {
-      value: 'claude-sonnet-4-5',
-      label: 'Claude Sonnet 4.5',
+      value: 'claude-sonnet-4-6',
+      label: 'Claude Sonnet 4.6',
       descriptor: '200K context · fast and capable',
       recommendedFor: ['interview'],
     },
     {
-      value: 'claude-haiku-4-5',
+      value: 'claude-haiku-4-5-20251001',
       label: 'Claude Haiku 4.5',
       descriptor: '200K context · fastest / lightest',
       recommendedFor: [],
@@ -60,14 +60,14 @@ export const MODELS = {
   ],
   gemini: [
     {
-      value: 'gemini-1.5-pro',
-      label: 'Gemini 1.5 Pro',
-      descriptor: '2M context · most capable',
+      value: 'gemini-2.5-pro',
+      label: 'Gemini 2.5 Pro',
+      descriptor: '1M context · most capable',
       recommendedFor: ['build'],
     },
     {
-      value: 'gemini-1.5-flash',
-      label: 'Gemini 1.5 Flash',
+      value: 'gemini-2.0-flash',
+      label: 'Gemini 2.0 Flash',
       descriptor: '1M context · fastest / lightest',
       recommendedFor: ['interview'],
     },
@@ -76,13 +76,13 @@ export const MODELS = {
     {
       value: 'llama3.1',
       label: 'Llama 3.1 (local)',
-      descriptor: 'local · capable',
+      descriptor: 'local · no API cost · lower quality',
       recommendedFor: ['build'],
     },
     {
       value: 'llama3',
       label: 'Llama 3 (local)',
-      descriptor: 'local · fast',
+      descriptor: 'local · no API cost · lower quality',
       recommendedFor: ['interview'],
     },
   ],
