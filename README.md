@@ -59,6 +59,7 @@ That's it. groundup takes it from there.
 | `groundup site` | View current session details |
 | `groundup site-clear` | Discard session and start fresh |
 | `groundup foreman` | Full command reference and help |
+| `groundup update-models` | Refresh available models from provider APIs |
 
 ---
 
@@ -92,8 +93,9 @@ That's it. groundup takes it from there.
 | Claude Code | Local — uses your claude.ai subscription |
 | Anthropic API | claude-sonnet / claude-opus |
 | OpenAI | gpt-4o / gpt-4o-mini |
-| Gemini | gemini-1.5-pro / flash |
+| Gemini | gemini-2.5-pro / flash |
 | Ollama | Local — llama3 |
+| GitHub Copilot | Coming soon |
 
 ---
 

@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { get } from '../config.js';
 
-const DEFAULT_MODEL = 'gemini-1.5-pro';
+const DEFAULT_MODEL = 'gemini-2.5-pro';
 
 export async function* stream(messages, systemPrompt, { model: modelId = DEFAULT_MODEL } = {}) {
   const key = get('gemini');

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { get } from '../config.js';
 
-const DEFAULT_MODEL = 'claude-opus-4-5';
+const DEFAULT_MODEL = 'claude-opus-4-6';
 
 export async function* stream(messages, systemPrompt, { model = DEFAULT_MODEL } = {}) {
   const key = get('claude');
