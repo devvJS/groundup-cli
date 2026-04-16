@@ -12,6 +12,7 @@ import { runAIInterview, createActivityLog } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
+import { validateModel } from '../ai/validate.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -199,8 +200,19 @@ async function pickModel(phase, onboardedProviders) {
   );
   const idx = pick.indexOf('::');
   const providerName = pick.slice(0, idx);
-  const modelName = pick.slice(idx + 2);
-  return { provider: providerName, model: modelName === '' ? null : modelName };
+  const modelName = pick.slice(idx + 2) || null;
+
+  if (modelName) {
+    const result = await validateModel(providerName, modelName);
+    if (!result.valid) {
+      console.log(amber('■ ') + white(`Model "${modelName}" not found on ${PROVIDER_LABELS[providerName]}.`));
+      console.log(muted('  It may have been renamed or deprecated.'));
+      console.log(muted('  Run ') + amber('groundup update-models') + muted(' to refresh available models.'));
+      line();
+    }
+  }
+
+  return { provider: providerName, model: modelName };
 }
 
 async function ensureProviderKey(provider) {

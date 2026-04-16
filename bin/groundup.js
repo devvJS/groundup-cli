@@ -6,6 +6,7 @@ import { dig } from '../src/commands/dig.js';
 import { resume } from '../src/commands/continue.js';
 import { siteClear } from '../src/commands/site.js';
 import { foreman } from '../src/commands/foreman.js';
+import { updateModels } from '../src/commands/update-models.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -39,5 +40,10 @@ program
   .command('foreman')
   .description('Full command reference and help')
   .action(foreman);
+
+program
+  .command('update-models')
+  .description('Refresh available models from provider APIs')
+  .action(updateModels);
 
 program.parse(process.argv);
