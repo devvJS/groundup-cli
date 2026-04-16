@@ -1,6 +1,5 @@
-// Model catalog — per-provider list of selectable models with human-friendly
-// cost estimates and per-phase recommendation tags. Cost strings are
-// display-only snapshots; update as provider pricing changes.
+// Model catalog — per-provider list of selectable models with context
+// window + capability descriptors and per-phase recommendation tags.
 
 export const PROVIDER_LABELS = {
   claudecode: 'Claude Code',
@@ -15,7 +14,7 @@ export const MODELS = {
     {
       value: 'claudecode',
       label: 'Claude Code',
-      cost: 'subscription — no per-call billing',
+      descriptor: '200K context · subscription-backed',
       recommendedFor: ['interview', 'build'],
     },
   ],
@@ -23,19 +22,19 @@ export const MODELS = {
     {
       value: 'claude-opus-4-5',
       label: 'Claude Opus 4.5',
-      cost: '$15 / 1M in  ·  $75 / 1M out',
+      descriptor: '200K context · most capable',
       recommendedFor: ['build'],
     },
     {
       value: 'claude-sonnet-4-5',
       label: 'Claude Sonnet 4.5',
-      cost: '$3 / 1M in  ·  $15 / 1M out',
+      descriptor: '200K context · fast and capable',
       recommendedFor: ['interview'],
     },
     {
       value: 'claude-haiku-4-5',
       label: 'Claude Haiku 4.5',
-      cost: '$0.80 / 1M in  ·  $4 / 1M out',
+      descriptor: '200K context · fastest / lightest',
       recommendedFor: [],
     },
   ],
@@ -43,19 +42,19 @@ export const MODELS = {
     {
       value: 'o1',
       label: 'o1',
-      cost: '$15 / 1M in  ·  $60 / 1M out',
+      descriptor: '200K context · deepest reasoning',
       recommendedFor: ['build'],
     },
     {
       value: 'gpt-4o',
       label: 'GPT-4o',
-      cost: '$2.50 / 1M in  ·  $10 / 1M out',
+      descriptor: '128K context · balanced',
       recommendedFor: [],
     },
     {
       value: 'gpt-4o-mini',
       label: 'GPT-4o mini',
-      cost: '$0.15 / 1M in  ·  $0.60 / 1M out',
+      descriptor: '128K context · fastest / lightest',
       recommendedFor: ['interview'],
     },
   ],
@@ -63,13 +62,13 @@ export const MODELS = {
     {
       value: 'gemini-1.5-pro',
       label: 'Gemini 1.5 Pro',
-      cost: '$1.25 / 1M in  ·  $5 / 1M out',
+      descriptor: '2M context · most capable',
       recommendedFor: ['build'],
     },
     {
       value: 'gemini-1.5-flash',
       label: 'Gemini 1.5 Flash',
-      cost: '$0.075 / 1M in  ·  $0.30 / 1M out',
+      descriptor: '1M context · fastest / lightest',
       recommendedFor: ['interview'],
     },
   ],
@@ -77,13 +76,13 @@ export const MODELS = {
     {
       value: 'llama3.1',
       label: 'Llama 3.1 (local)',
-      cost: 'free — local',
+      descriptor: 'local · capable',
       recommendedFor: ['build'],
     },
     {
       value: 'llama3',
       label: 'Llama 3 (local)',
-      cost: 'free — local',
+      descriptor: 'local · fast',
       recommendedFor: ['interview'],
     },
   ],
@@ -98,7 +97,7 @@ export function modelsForPhase(phase, onboardedProviders) {
         provider,
         model: m.value,
         label: m.label,
-        cost: m.cost,
+        descriptor: m.descriptor,
         recommended: m.recommendedFor.includes(phase),
       });
     }
