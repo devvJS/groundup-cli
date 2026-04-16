@@ -1,92 +1,12 @@
-// Model catalog — per-provider list of selectable models with context
-// window + capability descriptors and per-phase recommendation tags.
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
-export const PROVIDER_LABELS = {
-  claudecode: 'Claude Code',
-  claude: 'Anthropic (Claude API)',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  ollama: 'Ollama',
-};
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const config = JSON.parse(readFileSync(join(__dirname, 'models.config.json'), 'utf8'));
 
-export const MODELS = {
-  claudecode: [
-    {
-      value: 'claudecode',
-      label: 'Claude Code',
-      descriptor: '200K context · subscription-backed',
-      recommendedFor: ['interview', 'build'],
-    },
-  ],
-  claude: [
-    {
-      value: 'claude-opus-4-5',
-      label: 'Claude Opus 4.5',
-      descriptor: '200K context · most capable',
-      recommendedFor: ['build'],
-    },
-    {
-      value: 'claude-sonnet-4-5',
-      label: 'Claude Sonnet 4.5',
-      descriptor: '200K context · fast and capable',
-      recommendedFor: ['interview'],
-    },
-    {
-      value: 'claude-haiku-4-5',
-      label: 'Claude Haiku 4.5',
-      descriptor: '200K context · fastest / lightest',
-      recommendedFor: [],
-    },
-  ],
-  openai: [
-    {
-      value: 'o1',
-      label: 'o1',
-      descriptor: '200K context · deepest reasoning',
-      recommendedFor: ['build'],
-    },
-    {
-      value: 'gpt-4o',
-      label: 'GPT-4o',
-      descriptor: '128K context · balanced',
-      recommendedFor: [],
-    },
-    {
-      value: 'gpt-4o-mini',
-      label: 'GPT-4o mini',
-      descriptor: '128K context · fastest / lightest',
-      recommendedFor: ['interview'],
-    },
-  ],
-  gemini: [
-    {
-      value: 'gemini-1.5-pro',
-      label: 'Gemini 1.5 Pro',
-      descriptor: '2M context · most capable',
-      recommendedFor: ['build'],
-    },
-    {
-      value: 'gemini-1.5-flash',
-      label: 'Gemini 1.5 Flash',
-      descriptor: '1M context · fastest / lightest',
-      recommendedFor: ['interview'],
-    },
-  ],
-  ollama: [
-    {
-      value: 'llama3.1',
-      label: 'Llama 3.1 (local)',
-      descriptor: 'local · capable',
-      recommendedFor: ['build'],
-    },
-    {
-      value: 'llama3',
-      label: 'Llama 3 (local)',
-      descriptor: 'local · fast',
-      recommendedFor: ['interview'],
-    },
-  ],
-};
+export const PROVIDER_LABELS = config.providerLabels;
+export const MODELS = config.models;
 
 export function modelsForPhase(phase, onboardedProviders) {
   const out = [];

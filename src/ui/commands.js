@@ -6,6 +6,7 @@ export const COMMANDS = [
   { cmd: 'groundup site',       desc: 'view current session details' },
   { cmd: 'groundup site-clear', desc: 'discard session and start fresh' },
   { cmd: 'groundup foreman',    desc: 'full command reference and help' },
+  { cmd: 'groundup update-models', desc: 'refresh models from provider APIs' },
 ];
 
 export const SESSION_SHORTCUTS = [

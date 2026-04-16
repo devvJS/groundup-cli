@@ -12,6 +12,7 @@ import { runAIInterview, createActivityLog } from '../ai/interview.js';
 import { get as getKey, set as setKey } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
+import { validateModel } from '../ai/validate.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,9 +22,9 @@ const PLANS_DIR = path.join(__dirname, '..', 'plans');
 
 const PROVIDERS = [
   { value: 'claudecode', label: 'Claude Code', hint: 'local — uses your claude.ai subscription' },
-  { value: 'claude', label: 'Claude', hint: 'Anthropic API — claude-opus-4-5' },
+  { value: 'claude', label: 'Claude', hint: 'Anthropic API — claude-opus-4-6' },
   { value: 'openai', label: 'OpenAI', hint: 'gpt-4o' },
-  { value: 'gemini', label: 'Gemini', hint: 'google — gemini-1.5-pro' },
+  { value: 'gemini', label: 'Gemini', hint: 'google — gemini-2.5-pro' },
   { value: 'ollama', label: 'Ollama', hint: 'local — llama3' },
 ];
 
@@ -35,13 +36,21 @@ const PROVIDER_KEY_URLS = {
   gemini: 'https://aistudio.google.com/apikey',
 };
 
-const AGENTS = [
-  { value: 'claudecode', label: 'Claude Code' },
-  { value: 'cursor', label: 'Cursor' },
-  { value: 'copilot', label: 'GitHub Copilot' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'other', label: 'Other' },
-];
+const AGENT_LABELS = {
+  claudecode: 'Claude Code',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
+  gemini: 'Gemini',
+  other: 'Other',
+};
+
+const PROVIDER_TO_AGENT = {
+  claudecode: 'claudecode',
+  claude: 'claudecode',
+  openai: 'copilot',
+  gemini: 'gemini',
+  ollama: 'other',
+};
 
 const PLATFORMS = [
   { value: 'web', label: 'Web app' },
@@ -132,7 +141,7 @@ async function installAgentDirs(projectDir, agents, log = null) {
 
   for (const agent of agents) {
     const dir = path.join(agentsRoot, agent);
-    const label = AGENTS.find((a) => a.value === agent)?.label ?? agent;
+    const label = AGENT_LABELS[agent] ?? agent;
     if (!fs.existsSync(dir)) {
       await runFsStep(log, `scaffolding ${label}`, 'created', `.groundup/agents/${agent}/`, () => {
         fs.mkdirSync(dir, { recursive: true });
@@ -191,8 +200,19 @@ async function pickModel(phase, onboardedProviders) {
   );
   const idx = pick.indexOf('::');
   const providerName = pick.slice(0, idx);
-  const modelName = pick.slice(idx + 2);
-  return { provider: providerName, model: modelName === '' ? null : modelName };
+  const modelName = pick.slice(idx + 2) || null;
+
+  if (modelName) {
+    const result = await validateModel(providerName, modelName);
+    if (!result.valid) {
+      console.log(amber('■ ') + white(`Model "${modelName}" not found on ${PROVIDER_LABELS[providerName]}.`));
+      console.log(muted('  It may have been renamed or deprecated.'));
+      console.log(muted('  Run ') + amber('groundup update-models') + muted(' to refresh available models.'));
+      line();
+    }
+  }
+
+  return { provider: providerName, model: modelName };
 }
 
 async function ensureProviderKey(provider) {
@@ -478,19 +498,11 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
 
   const provider = interviewModel.provider;
 
-  // --- agent multiselect (skipped when Claude Code is the only provider) ---
-  let agents = prefill.agents;
-  if (onlyClaudeCode) {
-    agents = agents ?? ['claudecode'];
-  } else if (!agents) {
-    agents = await askMultiselect(
-      'Which AI coding agents will you use on this project?',
-      AGENTS,
-      ['claudecode']
-    );
-  }
+  // --- infer agent dirs from provider selection ---
+  const agents = prefill.agents ??
+    [...new Set(onboardedProviders.map((p) => PROVIDER_TO_AGENT[p]))];
   const agentLabels = agents
-    .map((a) => AGENTS.find((x) => x.value === a)?.label ?? a)
+    .map((a) => AGENT_LABELS[a] ?? a)
     .join(', ');
   activityLog.record('agents selected', agentLabels);
   saveInterviewProgress(projectDir, { agents, phase: 'interview' });

@@ -23,6 +23,8 @@ const AMBER_SGR = '\x1b[38;2;245;166;35m';
 const RESET_SGR = '\x1b[0m';
 const HIDE_CURSOR = '\x1B[?25l';
 const SHOW_CURSOR = '\x1B[?25h';
+const SAVE_CURSOR = '\x1b7';
+const RESTORE_CURSOR = '\x1b8';
 
 export function askText(message, placeholder, required, mask, onViewDecisions, initialBuffer = '', onResize = null) {
   return new Promise((resolve) => {
@@ -179,6 +181,7 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
     };
 
     const printOptions = () => {
+      process.stdout.write(SAVE_CURSOR);
       options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === selected)));
       process.stdout.write('\n');
       process.stdout.write(hint + '\n');
@@ -186,13 +189,13 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
     };
 
     const rerender = () => {
-      process.stdout.write(`\x1b[${options.length + 3}A`);
-      options.forEach((opt, i) => {
-        process.stdout.write(`\r\x1b[2K` + drawRow(opt, i === selected));
-      });
-      process.stdout.write(`\r\x1b[2K\n`);
-      process.stdout.write(`\r\x1b[2K` + hint + '\n');
-      process.stdout.write(`\r\x1b[2K\n`);
+      process.stdout.write(RESTORE_CURSOR);
+      process.stdout.write('\x1b[J');
+      process.stdout.write(SAVE_CURSOR);
+      options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === selected)));
+      process.stdout.write('\n');
+      process.stdout.write(hint + '\n');
+      process.stdout.write('\n');
     };
 
     const teardown = () => {
@@ -357,8 +360,6 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
     let cursor = 0;
     let mode = 'input';
     const selected = new Set(initialSelected);
-    let contextualLines = [];
-    let lastTotalRows = 0;
 
     const computeContextual = () => {
       if (typeof onToggle !== 'function') return [];
@@ -383,28 +384,22 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
     };
 
     const writeBody = () => {
+      process.stdout.write(SAVE_CURSOR);
       options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === cursor)));
       process.stdout.write('\n');
       process.stdout.write(hint + '\n');
       process.stdout.write('\n');
-      contextualLines = computeContextual();
+      const contextualLines = computeContextual();
       for (const l of contextualLines) process.stdout.write(l + '\n');
-      lastTotalRows = options.length + 3 + contextualLines.length;
     };
 
     const printOptions = () => {
       writeBody();
     };
 
-    // Full repaint — move up over the prior body (options + hint block +
-    // contextual lines), clear to end of screen, redraw fresh. Using \x1b[J
-    // (not per-line \x1b[2K) handles variable-height contextual blocks where
-    // the number of lines can grow or shrink between renders.
     const rerender = () => {
-      if (lastTotalRows > 0) {
-        process.stdout.write(`\x1b[${lastTotalRows}A`);
-      }
-      process.stdout.write('\r\x1b[J');
+      process.stdout.write(RESTORE_CURSOR);
+      process.stdout.write('\x1b[J');
       writeBody();
     };
 
