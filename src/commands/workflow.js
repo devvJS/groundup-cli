@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
 import { getProvider } from '../ai/index.js';
 import { buildWorkflowPrompt } from '../ai/prompts/workflow.js';
 import { loadSession } from '../session/state.js';
@@ -83,36 +82,99 @@ function renderWorkflowMarkdown(text) {
   return output;
 }
 
-// Render workflow markdown, paging through `less` when it exceeds terminal height.
+const HIDE_CURSOR = '\x1B[?25l';
+const SHOW_CURSOR = '\x1B[?25h';
+const SAVE_CURSOR = '\x1b7';
+const RESTORE_CURSOR = '\x1b8';
+
+// Native scroll view — displays workflow content in a viewport with
+// arrow-key scrolling, matching the DEC save/restore cursor pattern
+// used by askSelect / askMultiselect in src/ui/input.js.
 async function renderWorkflowReview(markdown) {
   const lines = renderWorkflowMarkdown(markdown);
 
   const termRows = process.stdout.rows || 24;
-  // Reserve rows for the separator + question + select prompt that follow
-  const available = termRows - 6;
-  const content = lines.join('\n');
+  // Reserve rows for the hint bar + blank padding below it
+  const viewportHeight = termRows - 4;
 
-  if (lines.length <= available) {
-    // Fits on screen — render inline
-    console.log(content);
+  if (lines.length <= viewportHeight) {
+    // Fits on screen — render inline, no scroll needed
+    console.log(lines.join('\n'));
     return;
   }
 
-  // Content exceeds terminal — page through less
-  console.log(muted('  ↑ ↓ scroll   q exit'));
-  line();
+  const maxOffset = lines.length - viewportHeight;
+  let offset = 0;
+
+  const buildHint = () => {
+    const atEnd = offset >= maxOffset;
+    const status = atEnd
+      ? muted('── end of workflow ──')
+      : muted(`  ${offset + 1}–${offset + viewportHeight} of ${lines.length} lines`);
+    return '  ' + amber('↑ ↓') + ' ' + muted('scroll') +
+      '   ' + amber('q') + ' ' + muted('done') +
+      '   ' + amber('enter') + ' ' + muted('done') +
+      '      ' + status;
+  };
+
+  const paint = () => {
+    process.stdout.write(RESTORE_CURSOR);
+    process.stdout.write('\x1b[J');
+    const visible = lines.slice(offset, offset + viewportHeight);
+    for (const l of visible) process.stdout.write(l + '\n');
+    process.stdout.write('\n');
+    process.stdout.write(buildHint());
+  };
+
+  // Save cursor at the top of the viewport area, then draw
+  process.stdout.write(HIDE_CURSOR);
+  process.stdout.write(SAVE_CURSOR);
+  paint();
+
   return new Promise((resolve) => {
-    const pager = spawn('less', ['-R', '-F', '-X', '-P', '── end of workflow · q to exit ──'], {
-      stdio: ['pipe', 'inherit', 'inherit'],
-    });
-    pager.stdin.write(content);
-    pager.stdin.end();
-    pager.on('close', () => resolve());
-    pager.on('error', () => {
-      // less not available — fall back to inline
-      console.log(content);
-      resolve();
-    });
+    const teardown = () => {
+      process.stdin.removeListener('data', onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      // Clear the scroll view and restore cursor to the saved position
+      process.stdout.write(RESTORE_CURSOR);
+      process.stdout.write('\x1b[J');
+      process.stdout.write(SHOW_CURSOR);
+    };
+
+    const onData = (data) => {
+      let i = 0;
+      while (i < data.length) {
+        const byte = data[i];
+
+        // q or enter — exit scroll view
+        if (byte === 0x71 || byte === 0x0d || byte === 0x0a) {
+          teardown();
+          resolve();
+          return;
+        }
+
+        // ESC sequence — arrow keys
+        if (byte === 0x1B && data[i + 1] === 0x5B && i + 2 < data.length) {
+          const third = data[i + 2];
+          if (third === 0x41 && offset > 0) {
+            offset--;
+            paint();
+          } else if (third === 0x42 && offset < maxOffset) {
+            offset++;
+            paint();
+          }
+          i += 3;
+          continue;
+        }
+
+        i++;
+      }
+    };
+
+    if (process.stdin.isPaused()) process.stdin.resume();
+    process.stdin.setRawMode(true);
+    process.stdin.on('data', onData);
   });
 }
 
