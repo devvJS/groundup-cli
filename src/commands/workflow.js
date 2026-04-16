@@ -1,11 +1,61 @@
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import { getProvider } from '../ai/index.js';
 import { buildWorkflowPrompt } from '../ai/prompts/workflow.js';
 import { loadSession } from '../session/state.js';
 import { askSelect, askText } from '../ui/input.js';
 import { renderMarkdown } from '../ui/markdown.js';
 import { amber, white, muted, line, sep } from '../ui/splash.js';
+
+// Render workflow markdown, paging through `less` when it exceeds terminal height.
+async function renderWorkflowReview(markdown) {
+  // Capture renderMarkdown output to a string so we can measure line count.
+  const lines = [];
+  const origWrite = process.stdout.write.bind(process.stdout);
+  const origLog = console.log;
+  console.log = (...args) => { lines.push(args.join(' ')); };
+  process.stdout.write = (chunk) => {
+    // write() chunks don't always end with \n — accumulate into current line
+    const str = String(chunk);
+    const parts = str.split('\n');
+    if (lines.length === 0) lines.push('');
+    lines[lines.length - 1] += parts[0];
+    for (let i = 1; i < parts.length; i++) lines.push(parts[i]);
+    return true;
+  };
+
+  renderMarkdown(markdown);
+
+  console.log = origLog;
+  process.stdout.write = origWrite;
+
+  const termRows = process.stdout.rows || 24;
+  // Reserve rows for the separator + question + select prompt that follow
+  const available = termRows - 6;
+
+  if (lines.length <= available) {
+    // Fits on screen — render inline
+    for (const l of lines) origWrite(l + '\n');
+    return;
+  }
+
+  // Content exceeds terminal — page through less
+  const content = lines.join('\n');
+  return new Promise((resolve) => {
+    const pager = spawn('less', ['-R', '-F', '-X'], {
+      stdio: ['pipe', 'inherit', 'inherit'],
+    });
+    pager.stdin.write(content);
+    pager.stdin.end();
+    pager.on('close', () => resolve());
+    pager.on('error', () => {
+      // less not available — fall back to inline
+      origWrite(content + '\n');
+      resolve();
+    });
+  });
+}
 
 const PROVIDER_TO_AGENT = {
   claudecode: 'claudecode',
@@ -89,14 +139,15 @@ export async function generateWorkflow({ projectRoot }) {
     sep();
     line();
 
-    renderMarkdown(result);
+    await renderWorkflowReview(result);
 
     line();
     sep();
     line();
+    console.log(white('How does the workflow look?'));
 
     const choice = await askSelect(
-      'How does the workflow look?',
+      '',
       [
         { value: 'approve', label: 'Approve — continue to build' },
         { value: 'regenerate', label: 'Regenerate — provide feedback and try again' },
