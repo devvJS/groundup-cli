@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Last verified against:** `v0.3.0-beta.8` (April 17, 2026)
+
 ## What this is
 
 `groundup-cli` is a global, interactive Node CLI (ESM, `"type": "module"`) that walks a developer from an empty folder to a fully scaffolded, committed, and pushed project. The pipeline is: seed questions → provider/model selection → AI interview → blueprint generation/approval → repo setup (git init, create remote, push) → workflow generation/approval → phased build (agent dispatch per phase, commit/push per phase, optional squash). It is stack-agnostic and assumption-free — every choice requires explicit user confirmation.
