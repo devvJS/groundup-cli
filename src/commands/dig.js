@@ -9,7 +9,7 @@ import { runRepoSetup } from './repo.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview, createActivityLog } from '../ai/interview.js';
-import { get as getKey, set as setKey } from '../ai/config.js';
+import { get as getKey, set as setKey, PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
 import { validateModel } from '../ai/validate.js';
@@ -36,21 +36,6 @@ const PROVIDER_KEY_URLS = {
   gemini: 'https://aistudio.google.com/apikey',
 };
 
-const AGENT_LABELS = {
-  claudecode: 'Claude Code',
-  cursor: 'Cursor',
-  copilot: 'GitHub Copilot',
-  gemini: 'Gemini',
-  other: 'Other',
-};
-
-const PROVIDER_TO_AGENT = {
-  claudecode: 'claudecode',
-  claude: 'claudecode',
-  openai: 'copilot',
-  gemini: 'gemini',
-  ollama: 'other',
-};
 
 const PLATFORMS = [
   { value: 'web', label: 'Web app' },

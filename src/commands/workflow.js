@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getProvider } from '../ai/index.js';
+import { PROVIDER_TO_AGENT } from '../ai/config.js';
 import { buildWorkflowPrompt } from '../ai/prompts/workflow.js';
 import { loadSession } from '../session/state.js';
 import { askSelect, askText } from '../ui/input.js';
@@ -214,14 +215,6 @@ async function renderWorkflowReview(markdown) {
     process.stdin.on('data', onData);
   });
 }
-
-const PROVIDER_TO_AGENT = {
-  claudecode: 'claudecode',
-  claude: 'claudecode',
-  openai: 'copilot',
-  gemini: 'gemini',
-  ollama: 'other',
-};
 
 export async function generateWorkflow({ projectRoot }) {
   const blueprintPath = path.join(projectRoot, '.groundup', 'BLUEPRINT.md');
