@@ -496,21 +496,6 @@ export async function runBuild({ projectRoot }) {
 
   // --- All phases complete ---
 
-  // Post-build checklist
-  const manualSteps = extractManualSteps(blueprint);
-  if (manualSteps.length > 0) {
-    sep();
-    console.log(amber('■ ') + white('Post-build checklist'));
-    sep();
-    line();
-
-    for (const step of manualSteps) {
-      const marker = step.done ? success('  ■') : amber('  □');
-      console.log(marker + ' ' + white(step.text));
-    }
-    line();
-  }
-
   // All phases complete header
   sep();
   console.log(amber('■ ') + white('All phases complete'));
@@ -562,46 +547,10 @@ export async function runBuild({ projectRoot }) {
     }
   }
 
-  // --- Teardown ---
-  console.log(white('Remove .groundup/ project files?'));
-
-  const teardownChoice = await askSelect(
-    '',
-    [
-      { value: 'yes', label: 'Yes — clean up' },
-      { value: 'no', label: 'No — keep them' },
-    ],
-    'no'
-  );
-
-  // Mark complete before potential removal
+  // Mark build complete. Teardown and done screen are handled by the caller
+  // (dig.js / continue.js) after the deploy stage runs — .groundup/ must
+  // survive until deploy reads BLUEPRINT.md for the target.
   saveBuildState(projectRoot, { status: 'complete' });
-
-  line();
-
-  const groundupDir = path.join(projectRoot, '.groundup');
-  if (teardownChoice === 'yes') {
-    fs.rmSync(groundupDir, { recursive: true, force: true });
-    console.log(muted('── .groundup/ removed ──'));
-  } else {
-    console.log(muted('── .groundup/ kept at .groundup/ ──'));
-  }
-
-  line();
-
-  // --- Done screen ---
-  const cols = process.stdout.columns || 80;
-  const tagline = 'happy building. ⚒️';
-  const pad = Math.max(0, Math.floor((cols - tagline.length) / 2));
-
-  console.log(amber('━'.repeat(cols)));
-  console.log(' '.repeat(pad) + amber(tagline));
-  console.log(amber('━'.repeat(cols)));
-  line();
-  console.log(muted(`  your project is at ${projectRoot}`));
-  console.log(muted('  your code is on origin/develop — merge to main when ready to ship'));
-  console.log(muted('═'.repeat(cols)));
-  line();
 
   return { completed: true };
 }
