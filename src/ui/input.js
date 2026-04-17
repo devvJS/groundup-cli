@@ -170,6 +170,9 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
     let selected = Math.max(0, options.findIndex(o => o.value === initialValue));
     if (selected < 0) selected = 0;
     let mode = 'input';
+    let lastBodyRows = 0;
+
+    const bodyRowCount = () => options.length + 3; // options + blank + hint + blank
 
     const drawRow = (opt, isCursor) => {
       const paint = isCursor ? amber : white;
@@ -182,21 +185,19 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
     };
 
     const printOptions = () => {
-      process.stdout.write(SAVE_CURSOR);
       options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === selected)));
       process.stdout.write('\n');
       process.stdout.write(hint + '\n');
       process.stdout.write('\n');
+      lastBodyRows = bodyRowCount();
     };
 
     const rerender = () => {
-      process.stdout.write(RESTORE_CURSOR);
-      process.stdout.write('\x1b[J');
-      process.stdout.write(SAVE_CURSOR);
-      options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === selected)));
-      process.stdout.write('\n');
-      process.stdout.write(hint + '\n');
-      process.stdout.write('\n');
+      if (lastBodyRows > 0) {
+        process.stdout.write('\x1B[' + lastBodyRows + 'A');
+      }
+      process.stdout.write('\r\x1B[J');
+      printOptions();
     };
 
     const teardown = () => {
@@ -361,6 +362,7 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
 
     let cursor = 0;
     let mode = 'input';
+    let lastBodyRows = 0;
     const selected = new Set(initialSelected);
 
     const computeContextual = () => {
@@ -372,6 +374,11 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
       } catch {
         return [];
       }
+    };
+
+    const bodyRowCount = () => {
+      const contextualLines = computeContextual();
+      return options.length + 3 + contextualLines.length;
     };
 
     const drawRow = (opt, isCursor) => {
@@ -386,13 +393,13 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
     };
 
     const writeBody = () => {
-      process.stdout.write(SAVE_CURSOR);
       options.forEach((opt, i) => process.stdout.write(drawRow(opt, i === cursor)));
       process.stdout.write('\n');
       process.stdout.write(hint + '\n');
       process.stdout.write('\n');
       const contextualLines = computeContextual();
       for (const l of contextualLines) process.stdout.write(l + '\n');
+      lastBodyRows = bodyRowCount();
     };
 
     const printOptions = () => {
@@ -400,8 +407,10 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
     };
 
     const rerender = () => {
-      process.stdout.write(RESTORE_CURSOR);
-      process.stdout.write('\x1b[J');
+      if (lastBodyRows > 0) {
+        process.stdout.write('\x1B[' + lastBodyRows + 'A');
+      }
+      process.stdout.write('\r\x1B[J');
       writeBody();
     };
 
