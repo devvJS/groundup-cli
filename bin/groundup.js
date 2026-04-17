@@ -7,8 +7,6 @@ import { resume } from '../src/commands/continue.js';
 import { siteClear } from '../src/commands/site.js';
 import { foreman } from '../src/commands/foreman.js';
 import { updateModels } from '../src/commands/update-models.js';
-import { generateWorkflow } from '../src/commands/workflow.js';
-import { runBuild } from '../src/commands/build.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
@@ -47,22 +45,5 @@ program
   .command('update-models')
   .description('Refresh available models from provider APIs')
   .action(updateModels);
-
-// internal dev commands — not advertised in help or commands table
-program
-  .command('workflow')
-  .description(false)
-  .action(async () => {
-    const result = await generateWorkflow({ projectRoot: process.cwd() });
-    if (!result.approved) process.exit(1);
-  });
-
-program
-  .command('build')
-  .description(false)
-  .action(async () => {
-    const result = await runBuild({ projectRoot: process.cwd() });
-    if (!result.completed) process.exit(1);
-  });
 
 program.parse(process.argv);
