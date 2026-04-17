@@ -4,7 +4,7 @@ import { getProvider } from '../ai/index.js';
 import { buildWorkflowPrompt } from '../ai/prompts/workflow.js';
 import { loadSession } from '../session/state.js';
 import { askSelect, askText } from '../ui/input.js';
-import { amber, white, muted, success, line, sep } from '../ui/splash.js';
+import { amber, white, muted, success, warning, line, sep } from '../ui/splash.js';
 
 // Workflow-aware markdown renderer. Applies project color tokens to
 // phase headers, section labels, and body text per the workflow palette.
@@ -132,6 +132,9 @@ async function renderWorkflowReview(markdown) {
   paint();
 
   return new Promise((resolve) => {
+    let mode = 'scroll';
+    let rule = muted('═'.repeat(process.stdout.columns || 80));
+
     const teardown = () => {
       process.stdin.removeListener('data', onData);
       process.stdin.setRawMode(false);
@@ -142,10 +145,44 @@ async function renderWorkflowReview(markdown) {
       process.stdout.write(SHOW_CURSOR);
     };
 
+    const showConfirmQuit = () => {
+      mode = 'confirm-quit';
+      process.stdout.write('\n' + rule + '\n');
+      process.stdout.write(warning('  Are you sure you want to quit? ') + white('[press y for YES or n for NO]'));
+      process.stdout.write('\n' + rule);
+    };
+
+    const dismissConfirmQuit = () => {
+      process.stdout.write('\x1B[3A\r\x1B[J');
+      process.stdout.write(buildHint());
+      mode = 'scroll';
+    };
+
     const onData = (data) => {
       let i = 0;
       while (i < data.length) {
         const byte = data[i];
+
+        if (mode === 'confirm-quit') {
+          if (byte === 0x79 || byte === 0x59) {
+            teardown();
+            process.stdout.write('\x1B[2J\x1B[H');
+            line();
+            console.log(amber('■ ') + white('Session saved. Run ') + amber('groundup continue') + white(' to pick up where you left off.'));
+            line();
+            process.exit(0);
+          }
+          dismissConfirmQuit();
+          i++;
+          continue;
+        }
+
+        // ctrl+c
+        if (byte === 0x03) {
+          showConfirmQuit();
+          i++;
+          continue;
+        }
 
         // q or enter — exit scroll view
         if (byte === 0x71 || byte === 0x0d || byte === 0x0a) {
