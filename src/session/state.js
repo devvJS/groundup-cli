@@ -26,8 +26,9 @@ const defaultSession = {
   blueprint: null,
   repo: null,
   build: {
-    phase: null,
-    completed: [],
+    currentPhaseIndex: 0,
+    status: 'idle',
+    snapshots: {},
   },
 };
 
