@@ -302,9 +302,10 @@ export async function generateWorkflow({ projectRoot }) {
     line();
     sep();
     line();
+    console.log(white('How does the workflow look?'));
 
     const choice = await askSelect(
-      'How does the workflow look?',
+      '',
       [
         { value: 'approve', label: 'Approve — continue to build' },
         { value: 'regenerate', label: 'Regenerate — provide feedback and try again' },
