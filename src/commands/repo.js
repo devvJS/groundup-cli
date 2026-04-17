@@ -80,7 +80,16 @@ function ensureGitRepo(projectDir) {
     run('git', ['commit', '-m', 'initial commit — groundup scaffold'], projectDir);
   }
 
-  // 5. drop any pre-existing origin
+  // 5. create main branch from the scaffold commit so both branches share it
+  const mainExists = run('git', ['branch', '--list', 'main'], projectDir);
+  if (!mainExists) {
+    run('git', ['branch', 'main'], projectDir);
+  }
+
+  // 6. stay on develop — build work happens here
+  run('git', ['checkout', 'develop'], projectDir);
+
+  // 7. drop any pre-existing origin
   if (runQuiet('git', ['remote', 'get-url', 'origin'], projectDir)) {
     run('git', ['remote', 'remove', 'origin'], projectDir);
   }
@@ -98,6 +107,14 @@ function createGithubRepo(projectDir, name, isPrivate, description) {
   ];
   if (description) args.push('--description', description);
   runInherit('gh', args, projectDir);
+
+  // Push main branch and set it as the GitHub default
+  try {
+    run('git', ['push', '-u', 'origin', 'main'], projectDir);
+    run('gh', ['repo', 'edit', '--default-branch', 'main'], projectDir);
+  } catch {
+    // non-fatal — user can set default branch manually
+  }
 }
 
 function createGitlabRepo(projectDir, name, isPrivate, description) {
@@ -120,6 +137,7 @@ function createGitlabRepo(projectDir, name, isPrivate, description) {
   const remote = `git@gitlab.com:${username}/${name}.git`;
   run('git', ['remote', 'add', 'origin', remote], projectDir);
   runInherit('git', ['push', '-u', 'origin', 'develop'], projectDir);
+  try { run('git', ['push', '-u', 'origin', 'main'], projectDir); } catch {}
   return remote;
 }
 
@@ -129,6 +147,7 @@ async function promptAndPush(projectDir, promptMessage, placeholder) {
   const remoteUrl = await askText(promptMessage, placeholder, true);
   run('git', ['remote', 'add', 'origin', remoteUrl], projectDir);
   runInherit('git', ['push', '-u', 'origin', 'develop'], projectDir);
+  try { run('git', ['push', '-u', 'origin', 'main'], projectDir); } catch {}
   return remoteUrl;
 }
 
@@ -162,6 +181,18 @@ export async function runRepoSetup(projectDir) {
   } catch (err) {
     repoFailed(projectDir, 'unknown', err);
     return;
+  }
+
+  // Capture scaffold commit SHA so the build phase can offer a squash-to-one option
+  try {
+    const scaffoldSha = run('git', ['rev-parse', 'HEAD'], projectDir);
+    const current = loadSession(projectDir) ?? {};
+    updateSession({
+      ...current,
+      build: { ...(current.build || {}), scaffoldSha },
+    });
+  } catch {
+    // non-fatal — squash option will be unavailable
   }
 
   console.log(white('Before we break ground — where does this repository live?'));

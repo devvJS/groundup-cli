@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { getAgent } from '../agents/index.js';
 import { PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { loadSession, updateSession } from '../session/state.js';
@@ -146,6 +146,39 @@ function gitDiffStat(cwd, fromSha) {
   }
 }
 
+function gitCommitPhase(cwd, phase) {
+  try {
+    execSync('git add -A', { cwd, encoding: 'utf-8' });
+    // Nothing to commit if index matches HEAD
+    const diffRes = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd });
+    if (diffRes.status === 0) return false;
+    const msg = `phase ${phase.number}: ${phase.title}`;
+    const res = spawnSync('git', ['commit', '-m', msg], { cwd, encoding: 'utf-8' });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function gitPush(cwd) {
+  try {
+    execSync('git push origin develop', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    return { ok: true };
+  } catch (err) {
+    const sha = gitHeadSha(cwd);
+    return { ok: false, sha, error: (err.stderr || err.message || '').trim() };
+  }
+}
+
+function gitResetHard(cwd, sha) {
+  try {
+    execSync(`git reset --hard ${sha}`, { cwd, encoding: 'utf-8' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Extract manual/post-build checklist from BLUEPRINT.md if present.
 // Looks for sections titled "Manual Steps", "Post-build", "Checklist",
 // or any heading containing those keywords.
@@ -160,7 +193,7 @@ function extractManualSteps(blueprint) {
     // Check for relevant headings
     if (/^#{1,3}\s+/i.test(trimmed)) {
       const heading = trimmed.replace(/^#{1,3}\s+/, '').toLowerCase();
-      if (/manual\s*steps|post[- ]?build|checklist/.test(heading)) {
+      if (/manual\s*steps|post[- ]?build|checklist|distribution|deployment|installation|getting\s*started|publishing/.test(heading)) {
         capturing = true;
         continue;
       }
@@ -306,7 +339,7 @@ export async function runBuild({ projectRoot }) {
       const beforeSha = gitHeadSha(projectRoot);
       snapshots[i] = beforeSha;
 
-      // Dispatch to agent — spinner while launching, then agent owns the terminal
+      // Dispatch to agent — spinner runs until agent produces first output
       sep();
       console.log(amber('■ ') + white(`Dispatching to ${agentLabel}`));
       sep();
@@ -314,16 +347,26 @@ export async function runBuild({ projectRoot }) {
 
       const spinFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
       let spinIdx = 0;
+      let spinnerActive = true;
       const spinner = setInterval(() => {
-        process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        if (spinnerActive) {
+          process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        }
       }, 80);
 
-      // Small delay so spinner is visible before agent takes over stdio
-      await new Promise((r) => setTimeout(r, 400));
-      clearInterval(spinner);
-      process.stdout.write('\r\x1B[2K');
+      const clearSpinner = () => {
+        if (!spinnerActive) return;
+        spinnerActive = false;
+        clearInterval(spinner);
+        process.stdout.write('\r\x1B[2K');
+      };
 
-      const result = await agent.dispatch(promptPath, projectRoot);
+      const result = await agent.dispatch(promptPath, projectRoot, {
+        onFirstOutput: clearSpinner,
+      });
+
+      // Ensure spinner is cleared if agent exited without output
+      clearSpinner();
 
       line();
       sep();
@@ -384,6 +427,24 @@ export async function runBuild({ projectRoot }) {
 
       if (choice === 'approve') {
         line();
+
+        // Commit phase work
+        const committed = gitCommitPhase(projectRoot, phase);
+        if (committed) {
+          console.log(muted(`  Committed: phase ${phase.number}: ${phase.title}`));
+          const pushResult = gitPush(projectRoot);
+          if (pushResult.ok) {
+            console.log(muted('  Pushed to origin/develop'));
+          } else {
+            console.log(amber('■ ') + white('Push failed — you can push manually later'));
+            if (pushResult.sha) console.log(muted(`  HEAD is at ${pushResult.sha}`));
+            if (pushResult.error) console.log(muted(`  ${pushResult.error}`));
+          }
+        } else {
+          console.log(muted('  Nothing to commit for this phase'));
+        }
+
+        line();
         sep();
         console.log(amber('■ ') + white(`Phase ${phase.number} approved`));
         sep();
@@ -400,6 +461,17 @@ export async function runBuild({ projectRoot }) {
       }
 
       if (choice === 'retry') {
+        // Reset to pre-phase state so the agent starts clean
+        const resetSha = snapshots[i];
+        if (resetSha) {
+          const didReset = gitResetHard(projectRoot, resetSha);
+          if (didReset) {
+            console.log(muted(`  Reset to pre-phase state (${resetSha.slice(0, 7)})`));
+          } else {
+            console.log(amber('■ ') + white('Could not reset — agent will retry on current state'));
+          }
+        }
+
         feedback = await askText(
           'What should be different?',
           'e.g. "the auth middleware is missing error handling"',
@@ -445,6 +517,51 @@ export async function runBuild({ projectRoot }) {
   sep();
   line();
 
+  // --- Squash option ---
+  const currentSession = loadSession(projectRoot);
+  const scaffoldSha = currentSession?.build?.scaffoldSha;
+  if (scaffoldSha) {
+    const purpose = currentSession?.interview?.purpose || 'new project';
+    console.log(white('Squash all phase commits into one?'));
+    console.log(muted('  Replaces per-phase commits with a single clean commit.'));
+    line();
+
+    const squashChoice = await askSelect(
+      '',
+      [
+        { value: 'no', label: 'No — keep per-phase commits', hint: 'recommended' },
+        { value: 'yes', label: 'Yes — squash into one commit' },
+      ],
+      'no'
+    );
+
+    if (squashChoice === 'yes') {
+      line();
+      const squashMsg = `built with groundup — ${purpose}`;
+      try {
+        execSync(`git reset --soft ${scaffoldSha}`, { cwd: projectRoot, encoding: 'utf-8' });
+        execSync('git add -A', { cwd: projectRoot, encoding: 'utf-8' });
+        spawnSync('git', ['commit', '-m', squashMsg], { cwd: projectRoot, encoding: 'utf-8' });
+        console.log(muted(`  Squashed to: ${squashMsg}`));
+        try {
+          const pushRes = spawnSync('git', ['push', '--force-with-lease', 'origin', 'develop'], { cwd: projectRoot, encoding: 'utf-8' });
+          if (pushRes.status !== 0) throw new Error((pushRes.stderr || '').trim());
+          console.log(muted('  Force-pushed to origin/develop'));
+        } catch (pushErr) {
+          const sha = gitHeadSha(projectRoot);
+          console.log(amber('■ ') + white('Push failed — you can push manually'));
+          if (sha) console.log(muted(`  HEAD is at ${sha}`));
+        }
+      } catch (squashErr) {
+        console.log(amber('■ ') + white('Squash failed — per-phase commits preserved'));
+        console.log(muted(`  ${squashErr.message || squashErr}`));
+      }
+      line();
+    } else {
+      line();
+    }
+  }
+
   // --- Teardown ---
   console.log(white('Remove .groundup/ project files?'));
 
@@ -482,7 +599,7 @@ export async function runBuild({ projectRoot }) {
   console.log(amber('━'.repeat(cols)));
   line();
   console.log(muted(`  your project is at ${projectRoot}`));
-  console.log(muted('  push to main when you\'re ready to ship'));
+  console.log(muted('  your code is on origin/develop — merge to main when ready to ship'));
   console.log(muted('═'.repeat(cols)));
   line();
 
