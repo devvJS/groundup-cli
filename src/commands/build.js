@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { getAgent } from '../agents/index.js';
 import { PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { loadSession, updateSession } from '../session/state.js';
@@ -143,6 +143,36 @@ function gitDiffStat(cwd, fromSha) {
     return execSync(`git diff --stat ${fromSha}`, { cwd, encoding: 'utf-8' }).trim();
   } catch {
     return null;
+  }
+}
+
+function gitCommitPhase(cwd, phase) {
+  try {
+    execSync('git add -A', { cwd, encoding: 'utf-8' });
+    const msg = `phase ${phase.number}: ${phase.title}`;
+    const res = spawnSync('git', ['commit', '-m', msg, '--allow-empty'], { cwd, encoding: 'utf-8' });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function gitPush(cwd) {
+  try {
+    execSync('git push origin develop', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    return { ok: true };
+  } catch (err) {
+    const sha = gitHeadSha(cwd);
+    return { ok: false, sha, error: (err.stderr || err.message || '').trim() };
+  }
+}
+
+function gitResetHard(cwd, sha) {
+  try {
+    execSync(`git reset --hard ${sha}`, { cwd, encoding: 'utf-8' });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -394,6 +424,24 @@ export async function runBuild({ projectRoot }) {
 
       if (choice === 'approve') {
         line();
+
+        // Commit phase work
+        const committed = gitCommitPhase(projectRoot, phase);
+        if (committed) {
+          console.log(muted(`  Committed: phase ${phase.number}: ${phase.title}`));
+          const pushResult = gitPush(projectRoot);
+          if (pushResult.ok) {
+            console.log(muted('  Pushed to origin/develop'));
+          } else {
+            console.log(amber('■ ') + white('Push failed — you can push manually later'));
+            if (pushResult.sha) console.log(muted(`  HEAD is at ${pushResult.sha}`));
+            if (pushResult.error) console.log(muted(`  ${pushResult.error}`));
+          }
+        } else {
+          console.log(muted('  Nothing to commit for this phase'));
+        }
+
+        line();
         sep();
         console.log(amber('■ ') + white(`Phase ${phase.number} approved`));
         sep();
@@ -410,6 +458,17 @@ export async function runBuild({ projectRoot }) {
       }
 
       if (choice === 'retry') {
+        // Reset to pre-phase state so the agent starts clean
+        const resetSha = snapshots[i];
+        if (resetSha) {
+          const didReset = gitResetHard(projectRoot, resetSha);
+          if (didReset) {
+            console.log(muted(`  Reset to pre-phase state (${resetSha.slice(0, 7)})`));
+          } else {
+            console.log(amber('■ ') + white('Could not reset — agent will retry on current state'));
+          }
+        }
+
         feedback = await askText(
           'What should be different?',
           'e.g. "the auth middleware is missing error handling"',
@@ -455,6 +514,51 @@ export async function runBuild({ projectRoot }) {
   sep();
   line();
 
+  // --- Squash option ---
+  const currentSession = loadSession(projectRoot);
+  const scaffoldSha = currentSession?.build?.scaffoldSha;
+  if (scaffoldSha) {
+    const purpose = currentSession?.interview?.purpose || 'new project';
+    console.log(white('Squash all phase commits into one?'));
+    console.log(muted('  Replaces per-phase commits with a single clean commit.'));
+    line();
+
+    const squashChoice = await askSelect(
+      '',
+      [
+        { value: 'no', label: 'No — keep per-phase commits', hint: 'recommended' },
+        { value: 'yes', label: 'Yes — squash into one commit' },
+      ],
+      'no'
+    );
+
+    if (squashChoice === 'yes') {
+      line();
+      const squashMsg = `built with groundup — ${purpose}`;
+      try {
+        execSync(`git reset --soft ${scaffoldSha}`, { cwd: projectRoot, encoding: 'utf-8' });
+        execSync('git add -A', { cwd: projectRoot, encoding: 'utf-8' });
+        spawnSync('git', ['commit', '-m', squashMsg], { cwd: projectRoot, encoding: 'utf-8' });
+        console.log(muted(`  Squashed to: ${squashMsg}`));
+        try {
+          const pushRes = spawnSync('git', ['push', '--force-with-lease', 'origin', 'develop'], { cwd: projectRoot, encoding: 'utf-8' });
+          if (pushRes.status !== 0) throw new Error((pushRes.stderr || '').trim());
+          console.log(muted('  Force-pushed to origin/develop'));
+        } catch (pushErr) {
+          const sha = gitHeadSha(projectRoot);
+          console.log(amber('■ ') + white('Push failed — you can push manually'));
+          if (sha) console.log(muted(`  HEAD is at ${sha}`));
+        }
+      } catch (squashErr) {
+        console.log(amber('■ ') + white('Squash failed — per-phase commits preserved'));
+        console.log(muted(`  ${squashErr.message || squashErr}`));
+      }
+      line();
+    } else {
+      line();
+    }
+  }
+
   // --- Teardown ---
   console.log(white('Remove .groundup/ project files?'));
 
@@ -492,7 +596,7 @@ export async function runBuild({ projectRoot }) {
   console.log(amber('━'.repeat(cols)));
   line();
   console.log(muted(`  your project is at ${projectRoot}`));
-  console.log(muted('  push to main when you\'re ready to ship'));
+  console.log(muted('  your code is on origin/develop — merge to main when ready to ship'));
   console.log(muted('═'.repeat(cols)));
   line();
 

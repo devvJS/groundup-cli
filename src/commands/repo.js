@@ -164,6 +164,18 @@ export async function runRepoSetup(projectDir) {
     return;
   }
 
+  // Capture scaffold commit SHA so the build phase can offer a squash-to-one option
+  try {
+    const scaffoldSha = run('git', ['rev-parse', 'HEAD'], projectDir);
+    const current = loadSession(projectDir) ?? {};
+    updateSession({
+      ...current,
+      build: { ...(current.build || {}), scaffoldSha },
+    });
+  } catch {
+    // non-fatal — squash option will be unavailable
+  }
+
   console.log(white('Before we break ground — where does this repository live?'));
   line();
 
