@@ -6,6 +6,8 @@ import { sessionExists, loadSession, saveSession, updateSession, clearSession, s
 // import { runStackSelection } from '../stack/selection.js';
 // import { runBlueprint } from './blueprint.js';
 import { runRepoSetup } from './repo.js';
+import { generateWorkflow } from './workflow.js';
+import { runBuild } from './build.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview, createActivityLog } from '../ai/interview.js';
@@ -520,9 +522,20 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   // --- phase: repo setup ---
   await runRepoSetup(projectDir);
 
-  // DEPRECATED v0.2.0 — legacy phases replaced by AI engine:
-  //   runInterview()       → runAIInterview()
-  //   runAgentSelection()  → folded into provider select
-  //   runStackSelection()  → AI derives from interview
-  //   runBlueprint()       → BLUEPRINT.md maintained live during interview
+  // --- phase: workflow generation ---
+  line();
+  console.log(muted('── starting workflow generation ──'));
+  line();
+
+  const workflowResult = await generateWorkflow({ projectRoot: projectDir });
+  if (!workflowResult.approved) {
+    line();
+    console.log(muted('  Run ') + amber('groundup build') + muted(' to continue when ready.'));
+    line();
+    return;
+  }
+
+  // --- phase: build ---
+  updateSession({ ...loadSession(), phase: 'build' });
+  await runBuild({ projectRoot: projectDir });
 }

@@ -10,7 +10,7 @@ A global CLI that takes a developer from an empty folder to a scaffolded, git-re
 
 ## status
 
-**v0.3.0-beta** — interview, blueprint, and repo phases are complete and working. Build phase is in active development.
+**v0.3.0-beta** — full flow is functional end-to-end: interview → blueprint → repo → workflow → build.
 
 ---
 
@@ -46,7 +46,9 @@ That's it. groundup takes it from there.
 | 03 | Interview | AI conducts an adaptive interview to shape your blueprint |
 | 04 | Blueprint | Review and approve your full project spec |
 | 05 | Repo | Git init, host selection, push to develop |
-| 06 | Build | Coming soon — groundup scaffolds the project from the blueprint |
+| 06 | Workflow | AI generates a phased execution plan (WORKFLOW.md) from your blueprint — review and approve |
+| 07 | Build | groundup dispatches each workflow phase to your chosen AI agent, one at a time. After each phase: review the recap and diff, then approve, retry with feedback, or abort. Resume any time with `groundup continue`. |
+| 08 | Teardown | Option to clean up `.groundup/` project files, then the done screen |
 
 ---
 
@@ -81,8 +83,10 @@ That's it. groundup takes it from there.
 | `README.md` | Project name, purpose, and ⚒️ footnote |
 | `.gitignore` | With `.groundup/` excluded |
 | `.groundup/BLUEPRINT.md` | Your approved project spec |
+| `.groundup/WORKFLOW.md` | Phased execution plan generated from blueprint |
 | `.groundup/GROUNDUP.md` | Agent-agnostic project instructions |
 | `.groundup/agents/` | Agent-specific context files |
+| `.groundup/phases/` | Per-phase prompt and recap files |
 
 ---
 

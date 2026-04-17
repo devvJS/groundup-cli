@@ -6,6 +6,7 @@ import { PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { loadSession, updateSession } from '../session/state.js';
 import { askSelect, askText } from '../ui/input.js';
 import { amber, white, muted, success, line, sep } from '../ui/splash.js';
+import { renderMarkdownLines } from '../ui/markdown.js';
 
 // Parse WORKFLOW.md into an array of phase objects.
 // Each phase: { number, title, goal, acceptance, tasks: [{ description, done }] }
@@ -340,15 +341,16 @@ export async function runBuild({ projectRoot }) {
         line();
       }
 
-      // Show recap if present — rendered with left border to distinguish agent output
+      // Show recap if present — rendered through markdown renderer with left border
       const recapFileName = `${String(phase.number).padStart(2, '0')}-recap.md`;
       const recapPath = path.join(phasesDir, recapFileName);
       if (fs.existsSync(recapPath)) {
         const recap = fs.readFileSync(recapPath, 'utf-8').trim();
         if (recap) {
           console.log(success('Recap:'));
-          for (const recapLine of recap.split('\n')) {
-            console.log(muted('  │ ') + muted(recapLine));
+          const renderedLines = renderMarkdownLines(recap);
+          for (const recapLine of renderedLines) {
+            console.log(muted('  │ ') + recapLine);
           }
           line();
         }
@@ -443,8 +445,45 @@ export async function runBuild({ projectRoot }) {
   sep();
   line();
 
-  // Teardown placeholder
-  console.log(muted('── teardown + done screen coming in Prompt 4 ──'));
+  // --- Teardown ---
+  console.log(white('Remove .groundup/ project files?'));
+
+  const teardownChoice = await askSelect(
+    '',
+    [
+      { value: 'yes', label: 'Yes — clean up' },
+      { value: 'no', label: 'No — keep them' },
+    ],
+    'no'
+  );
+
+  // Mark complete before potential removal
+  saveBuildState(projectRoot, { status: 'complete' });
+
+  line();
+
+  const groundupDir = path.join(projectRoot, '.groundup');
+  if (teardownChoice === 'yes') {
+    fs.rmSync(groundupDir, { recursive: true, force: true });
+    console.log(muted('── .groundup/ removed ──'));
+  } else {
+    console.log(muted('── .groundup/ kept at .groundup/ ──'));
+  }
+
+  line();
+
+  // --- Done screen ---
+  const cols = process.stdout.columns || 80;
+  const tagline = 'happy building. ⚒️';
+  const pad = Math.max(0, Math.floor((cols - tagline.length) / 2));
+
+  console.log(amber('━'.repeat(cols)));
+  console.log(' '.repeat(pad) + amber(tagline));
+  console.log(amber('━'.repeat(cols)));
+  line();
+  console.log(muted(`  your project is at ${projectRoot}`));
+  console.log(muted('  push to main when you\'re ready to ship'));
+  console.log(muted('═'.repeat(cols)));
   line();
 
   return { completed: true };
