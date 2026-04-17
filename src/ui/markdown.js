@@ -81,73 +81,90 @@ function renderTable(block) {
 }
 
 export function renderMarkdown(text) {
-  const lines = String(text || '').split('\n');
+  for (const l of renderMarkdownLines(text)) console.log(l);
+}
+
+// Returns an array of styled strings (one per output line) without printing.
+// Used by renderMarkdown (which prints each line) and by callers that need
+// to prefix or wrap output (e.g. the build recap bordered block).
+export function renderMarkdownLines(text) {
+  const srcLines = String(text || '').split('\n');
   const cols = process.stdout.columns || 80;
+  const out = [];
 
   let i = 0;
-  while (i < lines.length) {
-    const raw = lines[i];
+  while (i < srcLines.length) {
+    const raw = srcLines[i];
     const trimmed = raw.trim();
 
+    // Tables — rendered inline (multiple output lines)
     if (trimmed.startsWith('|')) {
       const block = [];
-      while (i < lines.length && lines[i].trim().startsWith('|')) {
-        block.push(lines[i]);
+      while (i < srcLines.length && srcLines[i].trim().startsWith('|')) {
+        block.push(srcLines[i]);
         i++;
       }
+      // Capture table output via temporary console override
+      const saved = console.log;
+      const captured = [];
+      console.log = (...args) => captured.push(args.join(' '));
       renderTable(block);
+      console.log = saved;
+      out.push(...captured);
       continue;
     }
 
     i++;
 
     if (!trimmed) {
-      line();
+      out.push('');
       continue;
     }
 
     if (/^(-{3,}|\*{3,})$/.test(trimmed)) {
-      sep();
+      out.push(muted('═'.repeat(cols)));
       continue;
     }
 
     if (/^#\s+/.test(trimmed)) {
       const content = trimmed.replace(/^#\s+/, '');
-      line();
-      console.log(amber('━'.repeat(cols)));
-      console.log(amber(content.toUpperCase()));
-      console.log(amber('━'.repeat(cols)));
-      line();
+      out.push('');
+      out.push(amber('━'.repeat(cols)));
+      out.push(amber(content.toUpperCase()));
+      out.push(amber('━'.repeat(cols)));
+      out.push('');
       continue;
     }
 
     if (/^##\s+/.test(trimmed)) {
       const content = trimmed.replace(/^##\s+/, '');
-      line();
-      console.log(white(content));
-      console.log(muted('─'.repeat(content.length)));
+      out.push('');
+      out.push(white(content));
+      out.push(muted('─'.repeat(content.length)));
       continue;
     }
 
     if (/^###\s+/.test(trimmed)) {
       const content = trimmed.replace(/^###\s+/, '');
-      line();
-      console.log(amber('■') + ' ' + white(content));
+      out.push('');
+      out.push(amber('■') + ' ' + white(content));
       continue;
     }
 
     if (/^>\s?/.test(trimmed)) {
       const content = trimmed.replace(/^>\s?/, '');
-      console.log(muted('  │ ') + muted(processInline(content)));
+      out.push(muted('  │ ') + muted(processInline(content)));
       continue;
     }
 
     if (/^[-*]\s+/.test(trimmed)) {
       const content = trimmed.replace(/^[-*]\s+/, '');
-      console.log(amber('  ■') + ' ' + white(processInline(content)));
+      out.push(amber('  ■') + ' ' + white(processInline(content)));
       continue;
     }
 
-    console.log(white(processInline(trimmed)));
+    out.push(white(processInline(trimmed)));
   }
+
+  return out;
 }

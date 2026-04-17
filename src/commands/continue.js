@@ -3,6 +3,8 @@ import path from 'path';
 import { showSplash, line, amber, white, muted, sep } from '../ui/splash.js';
 import { sessionExists, loadSession, updateSession } from '../session/state.js';
 import { runRepoSetup } from './repo.js';
+import { generateWorkflow } from './workflow.js';
+import { runBuild } from './build.js';
 import { runSeedToInterview } from './dig.js';
 import { reviewBlueprint, runAIInterview } from '../ai/interview.js';
 
@@ -116,13 +118,52 @@ export async function resume() {
       return;
     }
 
-    case 'repo':
-      await runRepoSetup(session.project.dir);
+    case 'repo': {
+      await runRepoSetup(projectDir);
+      // Chain into workflow → build after repo
+      line();
+      console.log(muted('── starting workflow generation ──'));
+      line();
+      const repoWfResult = await generateWorkflow({ projectRoot: projectDir });
+      if (!repoWfResult.approved) {
+        line();
+        console.log(muted('  Run ') + amber('groundup continue') + muted(' to try again.'));
+        line();
+        return;
+      }
+      updateSession({ ...loadSession(), phase: 'build' });
+      await runBuild({ projectRoot: projectDir });
       return;
+    }
 
-    case 'build':
-      console.log(muted('  Build phase coming soon.'));
+    case 'build': {
+      const buildStatus = session.build?.status;
+      if (buildStatus === 'complete') {
+        console.log(amber('■ ') + white('Build already complete for this project.'));
+        line();
+        return;
+      }
+      // in-progress or aborted — resume at saved phase index
+      if (buildStatus === 'in-progress' || buildStatus === 'aborted') {
+        console.log(muted(`  Resuming build at phase ${(session.build.currentPhaseIndex || 0) + 1}...`));
+        line();
+        await runBuild({ projectRoot: projectDir });
+        return;
+      }
+      // idle — need workflow first
+      line();
+      console.log(muted('── starting workflow generation ──'));
+      line();
+      const wfResult = await generateWorkflow({ projectRoot: projectDir });
+      if (!wfResult.approved) {
+        line();
+        console.log(muted('  Run ') + amber('groundup continue') + muted(' to try again.'));
+        line();
+        return;
+      }
+      await runBuild({ projectRoot: projectDir });
       return;
+    }
 
     // DEPRECATED v0.2.0 phases — sessions created before the AI engine:
     case 'agent':

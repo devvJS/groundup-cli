@@ -90,6 +90,7 @@ export function askText(message, placeholder, required, mask, onViewDecisions, i
 
     const quitExit = () => {
       cleanup();
+      process.stdout.write('\x1B[2J\x1B[H');
       line();
       console.log(amber('■ ') + white('Session saved. Run ') + amber('groundup continue') + white(' to pick up where you left off.'));
       line();
@@ -262,6 +263,7 @@ export function askSelect(message, options, initialValue, onHelp, onViewDecision
         if (mode === 'confirm-quit') {
           if (byte === 0x79 || byte === 0x59) {
             teardown();
+            process.stdout.write('\x1B[2J\x1B[H');
             line();
             console.log(amber('■ ') + white('Session saved. Run ') + amber('groundup continue') + white(' to pick up where you left off.'));
             line();
@@ -467,6 +469,7 @@ export function askMultiselect(message, options, initialSelected = [], onHelp, o
         if (mode === 'confirm-quit') {
           if (byte === 0x79 || byte === 0x59) {
             teardown();
+            process.stdout.write('\x1B[2J\x1B[H');
             line();
             console.log(amber('■ ') + white('Session saved. Run ') + amber('groundup continue') + white(' to pick up where you left off.'));
             line();

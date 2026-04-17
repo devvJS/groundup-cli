@@ -79,3 +79,20 @@ export function recordTokenCount(provider, count) {
   data.tokenCounts[provider] = arr;
   write(data);
 }
+
+// Maps provider key → default agent key used for build-phase dispatch.
+export const PROVIDER_TO_AGENT = {
+  claudecode: 'claudecode',
+  claude: 'claudecode',
+  openai: 'copilot',
+  gemini: 'gemini',
+  ollama: 'other',
+};
+
+export const AGENT_LABELS = {
+  claudecode: 'Claude Code',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
+  gemini: 'Gemini',
+  other: 'Other',
+};
