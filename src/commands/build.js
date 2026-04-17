@@ -95,6 +95,8 @@ function buildPhasePrompt(phase, blueprint, workflow, feedback) {
     ? `\nRETRY FEEDBACK\nThe developer reviewed your previous attempt at this phase and asked for changes:\n${feedback}\n\nIncorporate this feedback. Do not mention the feedback in your output.\n`
     : '';
 
+  const recapFileName = `${String(phase.number).padStart(2, '0')}-recap.md`;
+
   return `You are building Phase ${phase.number}: ${phase.title}
 
 GOAL
@@ -122,6 +124,7 @@ RULES
 - After completing all tasks, verify that every acceptance criterion is met.
 - Do not modify files outside the scope of this phase unless a task explicitly requires it.
 - If a task is ambiguous, make a reasonable choice and document it in a code comment.
+- You MUST write a summary of what you built to .groundup/phases/${recapFileName} before exiting. Include: files created or modified, commands run, and whether acceptance criteria were met.
 `;
 }
 
@@ -302,11 +305,22 @@ export async function runBuild({ projectRoot }) {
       const beforeSha = gitHeadSha(projectRoot);
       snapshots[i] = beforeSha;
 
-      // Dispatch to agent
+      // Dispatch to agent — spinner while launching, then agent owns the terminal
       sep();
-      console.log(amber('■ ') + white(`Dispatching to ${agentLabel}...`));
+      console.log(amber('■ ') + white(`Dispatching to ${agentLabel}`));
       sep();
       line();
+
+      const spinFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+      let spinIdx = 0;
+      const spinner = setInterval(() => {
+        process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+      }, 80);
+
+      // Small delay so spinner is visible before agent takes over stdio
+      await new Promise((r) => setTimeout(r, 400));
+      clearInterval(spinner);
+      process.stdout.write('\r\x1B[2K');
 
       const result = await agent.dispatch(promptPath, projectRoot);
 
@@ -326,7 +340,7 @@ export async function runBuild({ projectRoot }) {
         line();
       }
 
-      // Show recap if present
+      // Show recap if present — rendered with left border to distinguish agent output
       const recapFileName = `${String(phase.number).padStart(2, '0')}-recap.md`;
       const recapPath = path.join(phasesDir, recapFileName);
       if (fs.existsSync(recapPath)) {
@@ -334,7 +348,7 @@ export async function runBuild({ projectRoot }) {
         if (recap) {
           console.log(success('Recap:'));
           for (const recapLine of recap.split('\n')) {
-            console.log(muted('  ' + recapLine));
+            console.log(muted('  │ ') + muted(recapLine));
           }
           line();
         }
@@ -346,7 +360,7 @@ export async function runBuild({ projectRoot }) {
       // Show git diff stat if there's a snapshot to compare against
       const diffStat = gitDiffStat(projectRoot, beforeSha);
       if (diffStat) {
-        console.log(success('Changes:'));
+        console.log(muted('Changes:'));
         for (const diffLine of diffStat.split('\n')) {
           console.log(muted('  ' + diffLine));
         }
@@ -372,6 +386,7 @@ export async function runBuild({ projectRoot }) {
         console.log(amber('■ ') + white(`Phase ${phase.number} approved`));
         sep();
         line();
+        line(); // breathing room before next phase header
 
         // Persist progress
         saveBuildState(projectRoot, {
