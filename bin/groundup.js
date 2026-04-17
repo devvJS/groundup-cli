@@ -7,11 +7,12 @@ import { resume } from '../src/commands/continue.js';
 import { siteClear } from '../src/commands/site.js';
 import { foreman } from '../src/commands/foreman.js';
 import { updateModels } from '../src/commands/update-models.js';
+import { renderCommandHelp, HELP } from '../src/ui/help.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
 
-// Suppress commander's default help — all help routes through foreman
+// Suppress commander's default help entirely
 program
   .name('groundup')
   .description('Build from nothing.')
@@ -19,39 +20,54 @@ program
   .helpOption(false)
   .addHelpCommand(false);
 
-// -h / --help flags → foreman
-program.option('-h, --help', 'show help');
-program.on('option:help', () => { foreman(); process.exit(0); });
+// Wrap an action to intercept --help / -h before running the real handler
+function helpGuard(helpKey, action) {
+  return (...args) => {
+    const cmd = args[args.length - 1]; // commander passes Command as last arg
+    const rawArgs = cmd?.args ?? [];
+    if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+      renderCommandHelp(HELP[helpKey]);
+      return;
+    }
+    return action(...args);
+  };
+}
 
 program
   .command('dig [name]')
   .description('Start a new project — the hero command')
-  .action(dig);
+  .allowUnknownOption()
+  .action(helpGuard('dig', dig));
 
 program
   .command('continue')
   .description('Resume a paused session')
-  .action(resume);
+  .allowUnknownOption()
+  .action(helpGuard('continue', resume));
 
 program
   .command('site')
   .description('View current session details')
-  .action(() => console.log('site coming soon'));
+  .allowUnknownOption()
+  .action(helpGuard('site', () => console.log('site coming soon')));
 
 program
   .command('site-clear')
   .description('Discard session and start fresh')
-  .action(siteClear);
+  .allowUnknownOption()
+  .action(helpGuard('site-clear', siteClear));
 
 program
   .command('foreman')
   .description('Full command reference and help')
-  .action(foreman);
+  .allowUnknownOption()
+  .action(helpGuard('foreman', foreman));
 
 program
   .command('update-models')
   .description('Refresh available models from provider APIs')
-  .action(updateModels);
+  .allowUnknownOption()
+  .action(helpGuard('update-models', updateModels));
 
 // `groundup help` → foreman
 program
@@ -59,8 +75,9 @@ program
   .description(false)
   .action(foreman);
 
-// No args → foreman
-if (process.argv.length <= 2) {
+// No args / bare --help / -h → foreman
+if (process.argv.length <= 2 ||
+    (process.argv.length === 3 && (process.argv[2] === '--help' || process.argv[2] === '-h'))) {
   foreman();
   process.exit(0);
 }
