@@ -160,7 +160,7 @@ function extractManualSteps(blueprint) {
     // Check for relevant headings
     if (/^#{1,3}\s+/i.test(trimmed)) {
       const heading = trimmed.replace(/^#{1,3}\s+/, '').toLowerCase();
-      if (/manual\s*steps|post[- ]?build|checklist/.test(heading)) {
+      if (/manual\s*steps|post[- ]?build|checklist|distribution|deployment|installation|getting\s*started|publishing/.test(heading)) {
         capturing = true;
         continue;
       }
