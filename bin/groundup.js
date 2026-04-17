@@ -11,10 +11,17 @@ import { updateModels } from '../src/commands/update-models.js';
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json');
 
+// Suppress commander's default help — all help routes through foreman
 program
   .name('groundup')
   .description('Build from nothing.')
-  .version(version, '-v, --version', 'current version and changelog');
+  .version(version, '-v, --version', 'current version and changelog')
+  .helpOption(false)
+  .addHelpCommand(false);
+
+// -h / --help flags → foreman
+program.option('-h, --help', 'show help');
+program.on('option:help', () => { foreman(); process.exit(0); });
 
 program
   .command('dig [name]')
@@ -45,5 +52,17 @@ program
   .command('update-models')
   .description('Refresh available models from provider APIs')
   .action(updateModels);
+
+// `groundup help` → foreman
+program
+  .command('help')
+  .description(false)
+  .action(foreman);
+
+// No args → foreman
+if (process.argv.length <= 2) {
+  foreman();
+  process.exit(0);
+}
 
 program.parse(process.argv);
