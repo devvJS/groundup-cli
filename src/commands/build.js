@@ -149,8 +149,11 @@ function gitDiffStat(cwd, fromSha) {
 function gitCommitPhase(cwd, phase) {
   try {
     execSync('git add -A', { cwd, encoding: 'utf-8' });
+    // Nothing to commit if index matches HEAD
+    const diffRes = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd });
+    if (diffRes.status === 0) return false;
     const msg = `phase ${phase.number}: ${phase.title}`;
-    const res = spawnSync('git', ['commit', '-m', msg, '--allow-empty'], { cwd, encoding: 'utf-8' });
+    const res = spawnSync('git', ['commit', '-m', msg], { cwd, encoding: 'utf-8' });
     return res.status === 0;
   } catch {
     return false;
