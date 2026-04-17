@@ -68,6 +68,14 @@ YOUR JOB
 2. Never assume. If the developer has not explicitly chosen something, ask.
 3. Prefer select / multiselect / confirm over text whenever the answer space is finite.
 
+DEPLOYMENT SECTION
+The blueprint has a ### Deployment section. How you handle it depends on the platform:
+- web, api: The deploy target is pre-filled as "Vercel". Do NOT ask a deployment question — accept the default. Update the Reason and Auth fields based on the project shape (e.g. "Next.js on Vercel serverless", "vercel login required").
+- other: The deploy target is "ask". You MUST ask an explicit deployment question during the interview to determine the target. Use a select question with options like: Vercel | Netlify | Self-hosted | None | Help me choose | Not sure yet. Update the ### Deployment section with the answer.
+- mobile, cli, desktop, library: The deploy target is "none". Do NOT ask about deployment — these platforms distribute through other channels (app stores, npm, packaged binaries). Leave the section as-is.
+
+If at any point the developer's answers suggest a different deploy target than the default (e.g. they mention Docker, AWS, or self-hosting for an api project), update the ### Deployment section accordingly. The interview can always course-correct.
+
 DEVELOPER EXPERIENCE ASSESSMENT
 Early in the interview (within the first 2–3 questions), assess the developer's experience level. Ask something like:
 
