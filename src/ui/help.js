@@ -133,4 +133,18 @@ export const HELP = {
       'groundup dig, the new models will appear as options.',
     related: 'dig, foreman',
   },
+
+  deploy: {
+    name: 'deploy',
+    summary: 'deploy to production',
+    usage: 'deploy',
+    description:
+      'Reads the deploy target from the blueprint (set during the\n' +
+      'interview) and ships to production. Currently supports Vercel.\n' +
+      'Standalone re-deploy — run after dig or continue finishes.',
+    next:
+      'On success, we print the live URL. On failure, we retry once\n' +
+      'then fall through to a manual checklist item with a hint.',
+    related: 'dig, continue, foreman',
+  },
 };

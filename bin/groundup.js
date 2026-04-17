@@ -7,6 +7,7 @@ import { resume } from '../src/commands/continue.js';
 import { siteClear } from '../src/commands/site.js';
 import { foreman } from '../src/commands/foreman.js';
 import { updateModels } from '../src/commands/update-models.js';
+import { runDeploy } from '../src/commands/deploy.js';
 import { renderCommandHelp, HELP } from '../src/ui/help.js';
 
 const require = createRequire(import.meta.url);
@@ -62,6 +63,12 @@ program
   .description('Full command reference and help')
   .allowUnknownOption()
   .action(helpGuard('foreman', foreman));
+
+program
+  .command('deploy')
+  .description('Deploy to production')
+  .allowUnknownOption()
+  .action(helpGuard('deploy', () => runDeploy({ projectRoot: process.cwd() })));
 
 program
   .command('update-models')
