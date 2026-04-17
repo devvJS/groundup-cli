@@ -306,7 +306,7 @@ export async function runBuild({ projectRoot }) {
       const beforeSha = gitHeadSha(projectRoot);
       snapshots[i] = beforeSha;
 
-      // Dispatch to agent — spinner while launching, then agent owns the terminal
+      // Dispatch to agent — spinner runs until agent produces first output
       sep();
       console.log(amber('■ ') + white(`Dispatching to ${agentLabel}`));
       sep();
@@ -314,16 +314,26 @@ export async function runBuild({ projectRoot }) {
 
       const spinFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
       let spinIdx = 0;
+      let spinnerActive = true;
       const spinner = setInterval(() => {
-        process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        if (spinnerActive) {
+          process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        }
       }, 80);
 
-      // Small delay so spinner is visible before agent takes over stdio
-      await new Promise((r) => setTimeout(r, 400));
-      clearInterval(spinner);
-      process.stdout.write('\r\x1B[2K');
+      const clearSpinner = () => {
+        if (!spinnerActive) return;
+        spinnerActive = false;
+        clearInterval(spinner);
+        process.stdout.write('\r\x1B[2K');
+      };
 
-      const result = await agent.dispatch(promptPath, projectRoot);
+      const result = await agent.dispatch(promptPath, projectRoot, {
+        onFirstOutput: clearSpinner,
+      });
+
+      // Ensure spinner is cleared if agent exited without output
+      clearSpinner();
 
       line();
       sep();
