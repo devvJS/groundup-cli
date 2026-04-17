@@ -299,7 +299,10 @@ export async function generateWorkflow({ projectRoot }) {
 
     await renderWorkflowReview(result);
 
-    line();
+    // Clear scroll view residue and re-print the section header
+    process.stdout.write('\x1B[2J\x1B[H');
+    sep();
+    console.log(amber('■ ') + white('Review WORKFLOW.md'));
     sep();
     line();
     console.log(white('How does the workflow look?'));
