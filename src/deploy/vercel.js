@@ -3,11 +3,36 @@
 // everything goes through `vercel` on PATH. Called by src/commands/deploy.js
 // via src/deploy/index.js.
 //
+// Framework detection (ensureFrameworkHint): Vercel's automatic framework
+// detection silently fails on some package shapes — notably Next.js 16.x with
+// Turbopack-default output (observed April 2026, test run /tmp/gts-web-e2e).
+// Vercel defaults to Framework Preset: Other, runs a generic static-site build
+// that produces no output, and reports "Ready" — but serves 404 on every route.
+// We detect the framework from package.json dependencies and write a minimal
+// vercel.json with the framework hint before deploying.
+//
+// Why vercel.json instead of CLI flags like --build-env: vercel.json persists
+// for future deploys, CI integrations (Vercel's GitHub app reads it), and
+// manual `vercel` runs. CLI flags would only fix the one deploy groundup fires.
+//
 // Assumes cwd is already the project directory.
 
 import { execSync, spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+
+// Framework detection map. Intentionally conservative — only includes
+// frameworks Vercel officially supports where we've verified auto-detection
+// can fail. If the framework isn't in this map, we don't write a hint and
+// let Vercel try its own detection. Adding entries here should be backed by
+// a real failure case, not speculative coverage.
+const FRAMEWORK_HINTS = {
+  next:               'nextjs',
+  vite:               'vite',
+  '@sveltejs/kit':    'sveltekit',
+  astro:              'astro',
+  '@remix-run/dev':   'remix',
+};
 
 /**
  * Check whether the `vercel` CLI is installed and on PATH.
@@ -47,6 +72,10 @@ export function preflight(cwd) {
     };
   }
 
+  // Write framework hint before linking — vercel link reads vercel.json
+  // to configure the project's build settings on creation.
+  const hint = ensureFrameworkHint(cwd);
+
   // Link project if .vercel/project.json is missing. `vercel link --yes`
   // auto-creates a new Vercel project or connects to an existing one.
   const projectJson = path.join(cwd, '.vercel', 'project.json');
@@ -65,7 +94,7 @@ export function preflight(cwd) {
     }
   }
 
-  return { ready: true };
+  return { ready: true, hint };
 }
 
 /**
@@ -105,6 +134,73 @@ export function parseUrl(output) {
     if (/^https?:\/\//.test(line)) return line;
   }
   return null;
+}
+
+/**
+ * Detect the project's framework from package.json and write a vercel.json
+ * hint if needed. Commits and pushes the file so future deploys and CI
+ * integrations pick up the same hint.
+ *
+ * @param {string} cwd — project directory
+ * @returns {{ wrote: boolean, framework?: string }}
+ */
+export function ensureFrameworkHint(cwd) {
+  const pkgPath = path.join(cwd, 'package.json');
+  if (!fs.existsSync(pkgPath)) return { wrote: false };
+
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return { wrote: false };
+  }
+
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  let detectedFramework = null;
+  for (const [dep, framework] of Object.entries(FRAMEWORK_HINTS)) {
+    if (dep in deps) {
+      detectedFramework = framework;
+      break;
+    }
+  }
+
+  if (!detectedFramework) return { wrote: false };
+
+  const vercelJsonPath = path.join(cwd, 'vercel.json');
+
+  if (fs.existsSync(vercelJsonPath)) {
+    // vercel.json exists — check if framework is already set
+    let existing;
+    try {
+      existing = JSON.parse(fs.readFileSync(vercelJsonPath, 'utf-8'));
+    } catch {
+      return { wrote: false };
+    }
+
+    if (existing.framework) {
+      // Trust the user's explicit choice
+      return { wrote: false };
+    }
+
+    // Add framework to existing vercel.json
+    existing.framework = detectedFramework;
+    fs.writeFileSync(vercelJsonPath, JSON.stringify(existing, null, 2) + '\n');
+  } else {
+    // Create minimal vercel.json
+    fs.writeFileSync(vercelJsonPath, JSON.stringify({ framework: detectedFramework }, null, 2) + '\n');
+  }
+
+  // Commit and push so CI integrations and future deploys pick up the hint
+  try {
+    execSync('git add vercel.json', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    const msg = 'chore: add vercel.json framework hint';
+    spawnSync('git', ['commit', '-m', msg], { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    execSync('git push origin develop', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+  } catch {
+    // Non-fatal — the file is on disk regardless
+  }
+
+  return { wrote: true, framework: detectedFramework };
 }
 
 function ensureVercelIgnored(cwd) {

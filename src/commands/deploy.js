@@ -14,10 +14,11 @@
 
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { getDeployProvider } from '../deploy/index.js';
 import { loadSession, updateSession } from '../session/state.js';
 import { askSelect } from '../ui/input.js';
-import { amber, white, muted, line, sep } from '../ui/splash.js';
+import { amber, white, muted, warning, line, sep } from '../ui/splash.js';
 
 /**
  * Extract the deploy target from the blueprint's ### Deployment section.
@@ -120,6 +121,9 @@ export async function runDeploy({ projectRoot }) {
     line();
     return buildFallthrough(target, projectRoot);
   }
+  if (preflightResult.hint?.wrote) {
+    console.log(muted(`  wrote vercel.json (framework: ${preflightResult.hint.framework})`));
+  }
   console.log(muted('  preflight passed'));
   line();
 
@@ -158,9 +162,37 @@ function handleSuccess(result, target, provider, projectRoot) {
   line();
   console.log(amber('■ ') + white('deployed'));
   if (url) console.log(muted(`  ${url}`));
+
+  // Health check — Vercel can report "Ready" but serve nothing if framework
+  // detection failed and the build produced no output. Doesn't block deploy
+  // completion (Vercel's Ready status is the source of truth) but flags the
+  // user that something may be off.
+  if (url) {
+    const health = checkDeployHealth(url);
+    if (!health.ok) {
+      line();
+      console.log(warning('■ ') + white(`deployed, but ${url} returned ${health.status}`));
+      console.log(muted('  your deployment may have built empty — check vercel.com/dashboard'));
+    }
+  }
+
   line();
   saveDeployState(projectRoot, { status: 'complete', url });
   return { deployed: true, url };
+}
+
+function checkDeployHealth(url) {
+  try {
+    const output = execSync(`curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${url}"`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const status = parseInt(output, 10);
+    const ok = status >= 200 && status < 400;
+    return { ok, status };
+  } catch {
+    return { ok: false, status: 'timeout' };
+  }
 }
 
 function buildFallthrough(target, projectRoot) {
