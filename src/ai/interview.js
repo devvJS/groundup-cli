@@ -669,6 +669,55 @@ function renderHelp(questionText, parsed, history = []) {
   console.log(amber('←') + ' ' + warning('ESC') + ' ' + muted('to') + ' ' + success('go back'));
 }
 
+// renderHelpChoose — displayed when the AI auto-picks via "Help me choose".
+// Same layout as renderHelp but with a "press any key to continue" dismiss
+// instead of "ESC to go back" (there is no prior question to return to).
+function renderHelpChoose(parsed, history = []) {
+  process.stdout.write('\x1B[2J\x1B[H');
+  const cols = process.stdout.columns || 80;
+  const interior = Math.max(2, cols - 2);
+  const bodyWidth = Math.max(20, cols - 4);
+  const optionWidth = Math.max(20, cols - 6);
+
+  sep();
+  console.log(amber('■') + ' ' + white("here's what we'd pick"));
+  sep();
+  line();
+
+  if (parsed.help || parsed.why) {
+    const body = [parsed.help, parsed.why].filter(Boolean).join('\n\n');
+    for (const ln of wordWrap(body, bodyWidth)) console.log(white(ln));
+    line();
+  }
+
+  if (parsed.optionsExplained) {
+    console.log(amber('■') + ' ' + white('breaking it down'));
+    line();
+    for (const raw of parsed.optionsExplained.split('\n')) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const idx = trimmed.indexOf(':');
+      const name = idx < 0 ? trimmed : trimmed.slice(0, idx).trim();
+      const expl = idx < 0 ? '' : trimmed.slice(idx + 1).trim();
+      console.log(amber('  ■ ' + name));
+      if (expl) {
+        for (const ln of wordWrap(expl, optionWidth)) console.log(white('  ' + ln));
+      }
+      line();
+    }
+  }
+
+  if (parsed.recommendation) {
+    console.log(amber('■') + ' ' + white('recommendation'));
+    line();
+    for (const ln of wordWrap(parsed.recommendation, bodyWidth)) console.log(white(ln));
+    line();
+  }
+
+  sep();
+  console.log(muted('  press any key to continue'));
+}
+
 async function streamHelpWithThinking(provider, system, baseMessages, parsed, providerName, history = [], activityLog = null) {
   const context = [
     `Question: ${parsed.question}`,
@@ -874,6 +923,37 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
         blueprintLocked = true;
         messages.push({ role: 'assistant', content: response });
         break;
+      }
+
+      // "Help me choose" flow: the AI returns a HELP response instead of a
+      // question. Display the help inline, add it to the conversation, then
+      // loop back to get the next AI response (which should be the actual
+      // next question with the AI's chosen answer applied).
+      if (parsed.type === 'help') {
+        messages.push({ role: 'assistant', content: response });
+        renderHelpChoose(parsed, history);
+
+        // Wait for keypress to dismiss, then continue to next AI call
+        await new Promise((resolve) => {
+          if (process.stdin.isPaused()) process.stdin.resume();
+          process.stdin.setRawMode(true);
+          const onData = () => {
+            process.stdin.removeListener('data', onData);
+            process.stdin.setRawMode(false);
+            process.stdin.pause();
+            resolve();
+          };
+          process.stdin.on('data', onData);
+        });
+
+        // Start a new thinking indicator for the next AI call
+        indicator = startThinking({
+          providerName,
+          pool: INTERVIEW_THINKING_MESSAGES,
+          activityLog,
+          topicsRemaining: remainingTopics(history),
+        });
+        continue;
       }
 
       messages.push({ role: 'assistant', content: response });
