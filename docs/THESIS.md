@@ -2,7 +2,7 @@
 
 > Make this product yours. Ground to ship. No assumptions. Only real expected output.
 
-groundup is an interview-first, stack-agnostic scaffolder that captures what a developer actually wants to build before writing a single line of code. The AI and the tool are in service of the user's specified vision — not the other way around. [voice review] Every decision flows from an explicit conversation, preserved as a reviewable blueprint, and executed exactly as approved.
+groundup is an interview-first, stack-agnostic scaffolder that captures what a developer actually wants to build before writing a single line of code. The AI and the tool are in service of the user's specified vision — not the other way around.
 
 ---
 
@@ -18,13 +18,13 @@ The user decides. The tool captures the decision as a blueprint. The tool execut
 
 Most tools optimize one layer — scaffolding, code generation, deploy. groundup coordinates them toward a user-specified intent. The interview feeds the blueprint, the blueprint feeds the workflow, the workflow feeds the phased build, the build feeds the deploy. Each layer executes within the constraints the user established in the layer before it.
 
-Coordination is the competitive position. Better models make coordination more important, not less — they improvise more aggressively in the absence of constraints. [voice review] A model that can build anything will build the wrong thing unless the intent is explicit. groundup makes the intent explicit.
+Coordination is the competitive position. Better models make coordination more important, not less — they improvise more aggressively in the absence of constraints. A model that can build anything will build the wrong thing unless the intent is explicit. That's what groundup is for.
 
 ---
 
 ## scale
 
-The same posture scales from solo dev to engineering team. Solo: Vercel, Netlify, simple deploys — one developer, one terminal, one pipeline run. Teams: CI pipelines, Spinnaker, AWS, approval workflows — the blueprint becomes a shared contract, phase approvals become PR gates, deploy targets span infrastructure. The philosophy stays the same across both: explicit decisions, captured intent, reviewable blueprint, phased build. [voice review] What changes is the coordination surface, not the posture.
+The same posture scales from solo dev to engineering team. Solo: Vercel, Netlify, simple deploys — one developer, one terminal, one pipeline run. Teams: CI pipelines, Spinnaker, AWS, approval workflows — the blueprint becomes a shared contract, phase approvals become PR gates, deploy targets span infrastructure. The philosophy stays the same across both: explicit decisions, captured intent, reviewable blueprint, phased build. What changes is the coordination surface, not the posture.
 
 ---
 
