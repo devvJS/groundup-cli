@@ -8,6 +8,7 @@ import { siteClear } from '../src/commands/site.js';
 import { foreman } from '../src/commands/foreman.js';
 import { updateModels } from '../src/commands/update-models.js';
 import { runDeploy } from '../src/commands/deploy.js';
+import { renderPhaseFailure } from '../src/ui/phase-failure.js';
 import { renderCommandHelp, HELP } from '../src/ui/help.js';
 
 const require = createRequire(import.meta.url);
@@ -68,7 +69,15 @@ program
   .command('deploy')
   .description('Deploy to production')
   .allowUnknownOption()
-  .action(helpGuard('deploy', () => runDeploy({ projectRoot: process.cwd() })));
+  .action(helpGuard('deploy', async () => {
+    const result = await runDeploy({ projectRoot: process.cwd() });
+    if (result?.fallthrough) {
+      renderPhaseFailure({
+        header: "deploy didn't land",
+        hint: result.fallthrough.hint,
+      });
+    }
+  }));
 
 program
   .command('update-models')
