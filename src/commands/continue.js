@@ -8,6 +8,7 @@ import { generateWorkflow } from './workflow.js';
 import { runBuild } from './build.js';
 import { runSeedToInterview } from './dig.js';
 import { runDeploy } from './deploy.js';
+import { renderRepoFailure } from '../ui/repo-failure.js';
 import { reviewBlueprint, runAIInterview } from '../ai/interview.js';
 
 export async function resume() {
@@ -85,7 +86,8 @@ export async function resume() {
         );
         const after = loadSession();
         updateSession({ ...after, phase: 'repo' });
-        await runRepoSetup(projectDir);
+        const bpRepoResult = await runRepoSetup(projectDir);
+        if (!bpRepoResult?.ok) renderRepoFailure(bpRepoResult);
         return;
       }
 
@@ -99,7 +101,8 @@ export async function resume() {
         line();
         const s = loadSession();
         updateSession({ ...s, phase: 'repo' });
-        await runRepoSetup(projectDir);
+        const approveRepoResult = await runRepoSetup(projectDir);
+        if (!approveRepoResult?.ok) renderRepoFailure(approveRepoResult);
         return;
       }
       // 'restart' — wipe .groundup/BLUEPRINT.md, fall back through a fresh interview.
@@ -116,12 +119,17 @@ export async function resume() {
       );
       const after = loadSession();
       updateSession({ ...after, phase: 'repo' });
-      await runRepoSetup(projectDir);
+      const restartRepoResult = await runRepoSetup(projectDir);
+      if (!restartRepoResult?.ok) renderRepoFailure(restartRepoResult);
       return;
     }
 
     case 'repo': {
-      await runRepoSetup(projectDir);
+      const repoResult = await runRepoSetup(projectDir);
+      if (!repoResult?.ok) {
+        renderRepoFailure(repoResult);
+        return;
+      }
       // Chain into workflow → build → deploy after repo
       line();
       console.log(muted('── starting workflow generation ──'));

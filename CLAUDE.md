@@ -44,7 +44,8 @@ The hero command `dig` orchestrates the full pipeline in this order:
 - `src/commands/dig.js` — hero command, orchestrates seed → interview → repo → workflow → build → deploy → post-pipeline
 - `src/commands/continue.js` — resume at saved phase, re-enters the same pipeline functions (includes deploy phase)
 - `src/commands/deploy.js` — `runDeploy()` reads blueprint target, runs provider preflight/deploy, retry-once policy
-- `src/commands/repo.js` — git init, branch creation (develop + main), remote setup (GitHub/GitLab/Bitbucket/self-hosted/skip), scaffold SHA capture
+- `src/commands/repo.js` — git init, branch creation (develop + main), remote setup (GitHub/GitLab/Bitbucket/self-hosted/skip), scaffold SHA capture. Returns `{ ok: true }` on success or `{ ok: false, reason, hint }` on failure with classified reason codes (`REPO_REASONS`). Callers halt the pipeline on failure.
+- `src/ui/repo-failure.js` — `renderRepoFailure(result)` renders the inline halt screen for repo-setup failures
 - `src/commands/workflow.js` — `generateWorkflow()` streams WORKFLOW.md from AI, renders in scroll view, approve/regenerate/abort loop
 - `src/commands/build.js` — `runBuild()` parses WORKFLOW.md into phases, dispatches each to an agent adapter, manages the approve/retry/abort gate with git lifecycle
 - `src/commands/foreman.js` — full command reference, single source of truth for top-level help
@@ -109,6 +110,7 @@ Important quirks:
 
 - `saveSession` **shallow-merges over `defaultSession`** — passing a partial object will wipe sibling keys at the top level. Always spread an existing `loadSession()` result, or use `updateSession` which does this for you.
 - All session paths are relative (`.groundup/session.json`); `dig` calls `process.chdir()` into the project dir before any session call. Phase modules assume cwd is already the project dir.
+- `repo` is set by `runRepoSetup`: `{ host, status }` on success/skip, `{ host, status: 'failed', reason, hint }` on failure. Reason codes are enumerated in `REPO_REASONS` (`repo.js`).
 - `build.status` values: `idle`, `in-progress`, `aborted`, `complete`.
 - `build.snapshots` maps phase index → pre-phase HEAD SHA (used for retry reset).
 - `build.scaffoldSha` is captured during repo setup and used for the optional post-build squash.
