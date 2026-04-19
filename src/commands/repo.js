@@ -80,24 +80,24 @@ function classifyGhError(stderr, name) {
   if (/not logged in/i.test(stderr) || /authentication/i.test(stderr) || /gh auth login/i.test(stderr)) {
     return {
       reason: REPO_REASONS['gh-not-authenticated'],
-      hint: 'gh is not authenticated. run `gh auth login` and then `groundup continue`.',
+      hint: 'gh isn\'t authenticated. run `gh auth login`, then `groundup continue`.',
     };
   }
   if (/permission/i.test(stderr) || /forbidden/i.test(stderr) || /403/i.test(stderr)) {
     return {
       reason: REPO_REASONS['gh-permission-denied'],
-      hint: 'gh is authenticated but could not create the repo. check your account permissions and run `groundup continue`.',
+      hint: 'gh is authenticated but GitHub refused the repo creation — likely a scope or org permission issue. check your account settings and run `groundup continue`.',
     };
   }
   if (/could not resolve host/i.test(stderr) || /network/i.test(stderr) || /connection refused/i.test(stderr) || /dns/i.test(stderr)) {
     return {
       reason: REPO_REASONS['network-error'],
-      hint: 'looks like a network issue reaching GitHub. check your connection and run `groundup continue`.',
+      hint: 'couldn\'t reach GitHub — looks like a network or DNS issue. confirm you\'re online and run `groundup continue`.',
     };
   }
   return {
     reason: REPO_REASONS['gh-create-failed'],
-    hint: `gh repo create failed. ${excerpt(stderr)}. fix and run \`groundup continue\`.`,
+    hint: `gh repo create failed. ${excerpt(stderr)}. resolve the error above and run \`groundup continue\`.`,
   };
 }
 
@@ -107,7 +107,7 @@ function classifyGitError(stderr) {
   if (/could not resolve host/i.test(msg) || /network/i.test(msg) || /connection refused/i.test(msg)) {
     return {
       reason: REPO_REASONS['network-error'],
-      hint: 'looks like a network issue reaching the host. check your connection and run `groundup continue`.',
+      hint: 'couldn\'t reach the remote host — looks like a network or DNS issue. confirm you\'re online and run `groundup continue`.',
     };
   }
   return null;
@@ -263,7 +263,7 @@ export async function runRepoSetup(projectDir) {
   } catch (err) {
     printGitError(err);
     return repoFailed(projectDir, 'unknown', REPO_REASONS['git-init-failed'],
-      `git init failed in ${projectDir}. check the directory and run \`groundup continue\`.`);
+      `git init failed in ${projectDir}. check that the directory is writable and not already a git repo, then run \`groundup continue\`.`);
   }
 
   // Capture scaffold commit SHA so the build phase can offer a squash-to-one option
@@ -393,19 +393,19 @@ export async function runRepoSetup(projectDir) {
     } else if (host === 'gitlab') {
       classified = {
         reason: REPO_REASONS['gitlab-create-failed'],
-        hint: `gitlab repo create failed. ${excerpt(err.message)}. fix and run \`groundup continue\`.`,
+        hint: `GitLab repo create failed. ${excerpt(err.message)}. resolve the error above and run \`groundup continue\`.`,
       };
     } else if (host === 'bitbucket' || host === 'self') {
       // Manual push path — check for network errors first
       const netErr = classifyGitError(err.message);
       classified = netErr || {
         reason: REPO_REASONS['git-remote-failed'],
-        hint: `couldn't push the initial commit to origin. check your remote and run \`groundup continue\`.`,
+        hint: `couldn't push the initial commit to origin. check that the remote URL is correct and you have push access, then run \`groundup continue\`.`,
       };
     } else {
       classified = {
         reason: REPO_REASONS['unknown'],
-        hint: `repo setup hit an unexpected error. ${excerpt(err.message)}. run \`groundup continue\` after investigating.`,
+        hint: `repo setup hit an unexpected error — ${excerpt(err.message)}. resolve the issue above and run \`groundup continue\`.`,
       };
     }
 
