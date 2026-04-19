@@ -13,7 +13,7 @@ export const REPO_REASONS = {
   'gh-permission-denied': 'gh-permission-denied',
   'gh-create-failed':     'gh-create-failed',
   'gitlab-create-failed': 'gitlab-create-failed',
-  'bitbucket-create-failed': 'bitbucket-create-failed',
+  'bitbucket-create-failed': 'bitbucket-create-failed', // reserved — no bb CLI in flow yet, future use
   'git-init-failed':      'git-init-failed',
   'git-remote-failed':    'git-remote-failed',
   'network-error':        'network-error',
