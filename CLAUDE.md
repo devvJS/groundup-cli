@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`groundup-cli` is a global, interactive Node CLI (ESM, `"type": "module"`) that walks a developer from an empty folder to a fully scaffolded, committed, and pushed project. The pipeline is: seed questions → provider/model selection → AI interview → blueprint generation/approval → repo setup (git init, create remote, push) → workflow generation/approval → phased build (agent dispatch per phase, commit/push per phase, optional squash). It is stack-agnostic and assumption-free — every choice requires explicit user confirmation.
+`groundup-cli` is a global, interactive Node CLI (ESM, `"type": "module"`) that walks a developer from an empty folder to a fully scaffolded, committed, pushed, and deployed project. The pipeline is: seed questions → provider/model selection → AI interview → blueprint generation/approval → repo setup (git init, create remote, push) → workflow generation/approval → phased build (agent dispatch per phase, commit/push per phase, optional squash) → deploy (Vercel, with retry-once policy). It is stack-agnostic and assumption-free — every choice requires explicit user confirmation.
 
 ## Run / develop
 
@@ -22,7 +22,7 @@ There is no build step (pure ESM), no linter, and no test suite (`npm test` is a
 
 ### Entry point
 
-`bin/groundup.js` registers six user-facing commands with commander and dispatches to `src/commands/*`. Commander's built-in help is fully suppressed — all help routes through `foreman` (see Help system below). `workflow` and `build` are **not** registered as commander commands; they are internal functions imported directly by `dig.js` and `continue.js`.
+`bin/groundup.js` registers seven user-facing commands with commander and dispatches to `src/commands/*`. Commander's built-in help is fully suppressed — all help routes through `foreman` (see Help system below). `workflow` and `build` are **not** registered as commander commands; they are internal functions imported directly by `dig.js` and `continue.js`.
 
 ### Phase ordering
 
@@ -34,13 +34,16 @@ The hero command `dig` orchestrates the full pipeline in this order:
 4. **Repo setup** — `git init`, create `develop` + `main` branches at scaffold commit, create remote repo, push both branches, set `main` as GitHub default (`src/commands/repo.js`)
 5. **Workflow generation** — AI generates `WORKFLOW.md` from the blueprint, user reviews in a native scroll view, approve/regenerate/abort (`src/commands/workflow.js`, called as `generateWorkflow()`)
 6. **Build** — phase loop dispatches each workflow phase to the selected build agent, with per-phase commit/push, retry via snapshot reset, and optional squash at the end (`src/commands/build.js`, called as `runBuild()`)
+7. **Deploy** — reads blueprint `### Deployment` target, runs preflight checks, deploys to production (Vercel). Retry-once on failure, then falls through to a manual checklist item. (`src/commands/deploy.js`, called as `runDeploy()`)
+8. **Post-pipeline** — teardown (remove `.groundup/`), unified checklist (blueprint items + deploy fallthrough), done screen with optional live URL (`dig.js` `renderPostPipeline()`)
 
 `continue.js` resumes at whatever phase was last saved in the session, re-entering the same functions.
 
 ### Module map
 
-- `src/commands/dig.js` — hero command, orchestrates seed → interview → repo → workflow → build
-- `src/commands/continue.js` — resume at saved phase, re-enters the same pipeline functions
+- `src/commands/dig.js` — hero command, orchestrates seed → interview → repo → workflow → build → deploy → post-pipeline
+- `src/commands/continue.js` — resume at saved phase, re-enters the same pipeline functions (includes deploy phase)
+- `src/commands/deploy.js` — `runDeploy()` reads blueprint target, runs provider preflight/deploy, retry-once policy
 - `src/commands/repo.js` — git init, branch creation (develop + main), remote setup (GitHub/GitLab/Bitbucket/self-hosted/skip), scaffold SHA capture
 - `src/commands/workflow.js` — `generateWorkflow()` streams WORKFLOW.md from AI, renders in scroll view, approve/regenerate/abort loop
 - `src/commands/build.js` — `runBuild()` parses WORKFLOW.md into phases, dispatches each to an agent adapter, manages the approve/retry/abort gate with git lifecycle
@@ -56,7 +59,9 @@ The hero command `dig` orchestrates the full pipeline in this order:
 - `src/session/state.js` — JSON persistence at `.groundup/session.json`
 - `src/ui/splash.js` — brand colors, separators, ASCII splash screen
 - `src/ui/input.js` — `askSelect`, `askMultiselect`, `askText` wrapping `@clack/prompts` with custom rendering
-- `src/ui/help.js` — `renderCommandHelp()` utility, `HELP` content object for all six commands
+- `src/deploy/index.js` — deploy provider registry, `getDeployProvider(target)` returns adapter module
+- `src/deploy/vercel.js` — Vercel deploy provider (detect, preflight, deploy, parseUrl) via CLI
+- `src/ui/help.js` — `renderCommandHelp()` utility, `HELP` content object for all seven commands
 - `src/ui/commands.js` — command table data, overlay for `/` shortcut
 - `src/ui/markdown.js` — `renderMarkdown()` and `renderMarkdownLines()` for recap display
 
@@ -91,6 +96,11 @@ Default session shape:
     "status": "idle",
     "snapshots": {},
     "scaffoldSha": null
+  },
+  "deploy": {
+    "target": null,
+    "status": "idle",
+    "url": null
   }
 }
 ```
@@ -103,6 +113,9 @@ Important quirks:
 - `build.snapshots` maps phase index → pre-phase HEAD SHA (used for retry reset).
 - `build.scaffoldSha` is captured during repo setup and used for the optional post-build squash.
 - `build.currentPhaseIndex` tracks resume position for `continue`.
+- `deploy.target` is the deploy target from blueprint (e.g. "Vercel"), set when deploy phase starts.
+- `deploy.status` values: `idle`, `pending`, `in-progress`, `complete`, `skipped`, `fallthrough`.
+- `deploy.url` is the production URL on successful deploy.
 
 ### Git lifecycle inside build
 
@@ -115,6 +128,26 @@ The build loop in `src/commands/build.js` manages git state throughout the phase
 - **After all phases:** offer an optional squash (default: No). If accepted: `git reset --soft <scaffoldSha>`, `git add -A`, commit as `built with groundup — <purpose>`, `git push --force-with-lease origin develop`.
 
 Repo setup (`src/commands/repo.js`) creates both `main` and `develop` branches at the scaffold commit. On GitHub, `main` is pushed and set as the default branch via `gh repo edit --default-branch main`. GitLab and manual push paths also push `main`.
+
+### Deploy architecture
+
+Deploy providers under `src/deploy/` handle shipping to production after build completes. Each exports `detect()`, `preflight(cwd)`, `deploy(cwd)`, and `parseUrl(output)`.
+
+| Provider | File | CLI | Supported |
+|---|---|---|---|
+| Vercel | `vercel.js` | `vercel --prod --yes` | Yes |
+
+`src/deploy/index.js` returns the provider via `getDeployProvider(targetName)`.
+
+The deploy target is determined during the interview via the blueprint's `### Deployment` section. Platform-to-default mapping: `web` and `api` default to Vercel; `mobile`, `cli`, `desktop`, `library` skip deploy entirely; `other` triggers an explicit interview question.
+
+Retry policy: on first failure, retry once automatically. On second failure, fall through to a manual checklist item with a platform-specific hint. No infinite retry, no abort gate.
+
+Preflight appends `.vercel/` to the project's `.gitignore` before any Vercel CLI command runs. On resume with a missing `.vercel/project.json`, preflight re-runs `vercel link --yes` silently.
+
+### Post-pipeline (teardown + done screen)
+
+After deploy (or skip), `dig.js`'s `renderPostPipeline()` handles teardown and the done screen. Teardown was moved out of `build.js` so `.groundup/` survives until deploy reads `BLUEPRINT.md` for the target. The unified checklist combines blueprint manual-step items with any deploy fallthrough item into one `amber('□')` list.
 
 ### Help system
 
@@ -169,6 +202,7 @@ User-facing commands (registered in commander):
 | `groundup site` | View current session details (stubbed) |
 | `groundup site-clear` | Discard session and start fresh |
 | `groundup foreman` | Full command reference and help |
+| `groundup deploy` | Deploy to production (reads blueprint target) |
 | `groundup update-models` | Refresh models from provider APIs |
 
 **`workflow` and `build` are not user-facing commands.** They are internal functions (`generateWorkflow()` and `runBuild()`) imported and called directly by `dig.js` and `continue.js`. They are not registered in commander and produce "unknown command" if a user tries to invoke them.
