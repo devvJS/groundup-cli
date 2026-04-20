@@ -4,7 +4,7 @@ import path from 'path';
 const SESSION_DIR = '.groundup';
 const SESSION_FILE = '.groundup/session.json';
 
-export const VALID_PHASES = ['seed', 'interview', 'blueprint', 'repo', 'build'];
+export const VALID_PHASES = ['seed', 'interview', 'blueprint', 'repo', 'build', 'deploy'];
 
 const defaultSession = {
   version: '1.0.0',
@@ -29,6 +29,11 @@ const defaultSession = {
     currentPhaseIndex: 0,
     status: 'idle',
     snapshots: {},
+  },
+  deploy: {
+    target: null,
+    status: 'idle',
+    url: null,
   },
 };
 

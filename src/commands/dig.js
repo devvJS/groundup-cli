@@ -1,4 +1,4 @@
-import { showSplash, teardownSplashResize, line, amber, white, muted, sep } from '../ui/splash.js';
+import { showSplash, teardownSplashResize, line, amber, white, muted, sep, success } from '../ui/splash.js';
 import { sessionExists, loadSession, saveSession, updateSession, clearSession, saveInterviewProgress } from '../session/state.js';
 // DEPRECATED: replaced by AI engine in v0.2.0
 // import { runInterview } from '../interview/engine.js';
@@ -8,6 +8,8 @@ import { sessionExists, loadSession, saveSession, updateSession, clearSession, s
 import { runRepoSetup } from './repo.js';
 import { generateWorkflow } from './workflow.js';
 import { runBuild } from './build.js';
+import { runDeploy } from './deploy.js';
+import { renderRepoFailure } from '../ui/repo-failure.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview, createActivityLog } from '../ai/interview.js';
@@ -31,6 +33,26 @@ const PROVIDERS = [
 ];
 
 const CLAUDE_CODE_INSTALL_URL = 'https://claude.ai/download';
+
+// Platform → default deploy target. web and api default to Vercel because the
+// typical groundup project in those buckets is a Next.js / Express-on-serverless
+// shape. mobile/cli/desktop/library skip deploy entirely — they publish or
+// distribute through platform-specific channels, not web deploys.
+// "other" is ambiguous, so the interview asks an explicit deployment question.
+//
+// Why not default library to "none" silently: libraries publish to npm, not
+// deploy, but some libraries have companion docs sites that DO deploy. Out of
+// scope for this cut; a future branch could add "library with docs site" as a
+// follow-up question.
+const PLATFORM_DEPLOY_DEFAULTS = {
+  web: 'Vercel',
+  api: 'Vercel',
+  mobile: 'none',
+  cli: 'none',
+  desktop: 'none',
+  library: 'none',
+  other: 'ask',
+};
 
 const PROVIDER_KEY_URLS = {
   claude: 'https://console.anthropic.com/settings/keys',
@@ -84,11 +106,16 @@ async function installGroundupDir(projectDir, projectName, purpose, platform, lo
   if (fs.existsSync(blueprintSrc) && !fs.existsSync(blueprintDest)) {
     await runFsStep(log, 'writing BLUEPRINT.md', 'wrote', '.groundup/BLUEPRINT.md', () => {
       const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label ?? platform;
+      // web and api default to Vercel — the typical groundup project is a
+      // Next.js or Express-on-serverless shape. The AI interview can still
+      // course-correct if the user signals a different target mid-interview.
+      const deployTarget = PLATFORM_DEPLOY_DEFAULTS[platform] ?? 'none';
       const filled = fs
         .readFileSync(blueprintSrc, 'utf-8')
         .replace('[project-name]', projectName)
         .replace('[purpose — one sentence, filled from seed question 1]', purpose)
-        .replace('[filled from seed question 2]', platformLabel);
+        .replace('[filled from seed question 2]', platformLabel)
+        .replace('[deploy-target]', deployTarget);
       fs.writeFileSync(blueprintDest, filled);
     });
   }
@@ -520,7 +547,11 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   updateSession({ ...loadSession(), phase: 'repo' });
 
   // --- phase: repo setup ---
-  await runRepoSetup(projectDir);
+  const repoResult = await runRepoSetup(projectDir);
+  if (!repoResult?.ok) {
+    renderRepoFailure(repoResult);
+    return;
+  }
 
   // --- phase: workflow generation ---
   line();
@@ -537,5 +568,121 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
 
   // --- phase: build ---
   updateSession({ ...loadSession(), phase: 'build' });
-  await runBuild({ projectRoot: projectDir });
+  const buildResult = await runBuild({ projectRoot: projectDir });
+
+  if (buildResult?.completed) {
+    // --- phase: deploy ---
+    const deployResult = await runDeploy({ projectRoot: projectDir });
+    await renderPostPipeline(projectDir, deployResult);
+  }
+}
+
+// Unified post-pipeline output: teardown, checklist (blueprint items + deploy
+// fallthrough), and done screen. Kept in dig.js because it's the orchestrator —
+// build.js and deploy.js each return data, this function renders the combined view.
+async function renderPostPipeline(projectDir, deployResult) {
+  // --- Teardown ---
+  // Moved here from build.js so .groundup/ survives until deploy reads
+  // BLUEPRINT.md for the target.
+  console.log(white('Remove .groundup/ project files?'));
+
+  const teardownChoice = await askSelect(
+    '',
+    [
+      { value: 'yes', label: 'Yes — clean up' },
+      { value: 'no', label: 'No — keep them' },
+    ],
+    'no'
+  );
+
+  // Collect checklist items BEFORE potential removal
+  const blueprintPath = path.join(projectDir, '.groundup', 'BLUEPRINT.md');
+  let checklist = [];
+  if (fs.existsSync(blueprintPath)) {
+    const blueprint = fs.readFileSync(blueprintPath, 'utf-8');
+    checklist = extractManualStepsFromBlueprint(blueprint);
+  }
+
+  line();
+
+  const groundupDir = path.join(projectDir, '.groundup');
+  if (teardownChoice === 'yes') {
+    fs.rmSync(groundupDir, { recursive: true, force: true });
+    console.log(muted('── .groundup/ removed ──'));
+  } else {
+    console.log(muted('── .groundup/ kept at .groundup/ ──'));
+  }
+
+  line();
+
+  // Append deploy fallthrough item if deploy didn't land
+  if (deployResult?.fallthrough) {
+    checklist.push({
+      text: deployResult.fallthrough.text,
+      hint: deployResult.fallthrough.hint,
+      done: false,
+    });
+  }
+
+  // Render unified checklist
+  if (checklist.length > 0) {
+    sep();
+    console.log(amber('■ ') + white('before you ship'));
+    sep();
+    line();
+    for (const item of checklist) {
+      const marker = item.done ? success('  ■') : amber('  □');
+      console.log(marker + ' ' + white(item.text));
+      if (item.hint) console.log(muted(`      ${item.hint}`));
+    }
+    line();
+  }
+
+  // Done screen
+  const cols = process.stdout.columns || 80;
+  const tagline = 'happy building. ⚒️';
+  const pad = Math.max(0, Math.floor((cols - tagline.length) / 2));
+
+  console.log(amber('━'.repeat(cols)));
+  console.log(' '.repeat(pad) + amber(tagline));
+  console.log(amber('━'.repeat(cols)));
+  line();
+  console.log(muted(`  your project is at ${projectDir}`));
+  console.log(muted('  your code is on origin/develop — merge to main when ready to ship'));
+  if (deployResult?.deployed && deployResult.url) {
+    console.log(muted('  live at ') + amber(deployResult.url));
+  }
+  console.log(muted('═'.repeat(cols)));
+  line();
+}
+
+// Mirrors extractManualSteps in build.js but importable from dig.js. Extracts
+// checklist items from blueprint sections titled Manual Steps, Post-build,
+// Checklist, Deployment, etc.
+function extractManualStepsFromBlueprint(blueprint) {
+  const lines = blueprint.split('\n');
+  const items = [];
+  let capturing = false;
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (/^#{1,3}\s+/i.test(trimmed)) {
+      const heading = trimmed.replace(/^#{1,3}\s+/, '').toLowerCase();
+      if (/manual\s*steps|post[- ]?build|checklist/.test(heading)) {
+        capturing = true;
+        continue;
+      }
+      if (capturing) break;
+    }
+    if (!capturing) continue;
+    const checkMatch = trimmed.match(/^- \[([ xX])\]\s+(.*)/);
+    if (checkMatch) {
+      items.push({ text: checkMatch[2].trim(), done: checkMatch[1].toLowerCase() === 'x' });
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed)) {
+      items.push({ text: trimmed.replace(/^[-*]\s+/, ''), done: false });
+    }
+  }
+  return items;
 }

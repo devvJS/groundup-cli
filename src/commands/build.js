@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import os from 'os';
+import { execSync, spawnSync } from 'child_process';
 import { getAgent } from '../agents/index.js';
 import { PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { loadSession, updateSession } from '../session/state.js';
@@ -125,6 +126,7 @@ RULES
 - After completing all tasks, verify that every acceptance criterion is met.
 - Do not modify files outside the scope of this phase unless a task explicitly requires it.
 - If a task is ambiguous, make a reasonable choice and document it in a code comment.
+- .groundup/ is groundup's session state directory. Do not modify, delete, overwrite, or reorganize it. If a scaffolding command would affect it (e.g. --overwrite flags on vite, create-react-app, create-next-app, or similar), exclude .groundup/ from that operation or work around it by scaffolding into a temp directory and moving files.
 - You MUST write a summary of what you built to .groundup/phases/${recapFileName} before exiting. Include: files created or modified, commands run, and whether acceptance criteria were met.
 `;
 }
@@ -146,6 +148,39 @@ function gitDiffStat(cwd, fromSha) {
   }
 }
 
+function gitCommitPhase(cwd, phase) {
+  try {
+    execSync('git add -A', { cwd, encoding: 'utf-8' });
+    // Nothing to commit if index matches HEAD
+    const diffRes = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd });
+    if (diffRes.status === 0) return false;
+    const msg = `phase ${phase.number}: ${phase.title}`;
+    const res = spawnSync('git', ['commit', '-m', msg], { cwd, encoding: 'utf-8' });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function gitPush(cwd) {
+  try {
+    execSync('git push origin develop', { cwd, encoding: 'utf-8', stdio: 'pipe' });
+    return { ok: true };
+  } catch (err) {
+    const sha = gitHeadSha(cwd);
+    return { ok: false, sha, error: (err.stderr || err.message || '').trim() };
+  }
+}
+
+function gitResetHard(cwd, sha) {
+  try {
+    execSync(`git reset --hard ${sha}`, { cwd, encoding: 'utf-8' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Extract manual/post-build checklist from BLUEPRINT.md if present.
 // Looks for sections titled "Manual Steps", "Post-build", "Checklist",
 // or any heading containing those keywords.
@@ -160,7 +195,7 @@ function extractManualSteps(blueprint) {
     // Check for relevant headings
     if (/^#{1,3}\s+/i.test(trimmed)) {
       const heading = trimmed.replace(/^#{1,3}\s+/, '').toLowerCase();
-      if (/manual\s*steps|post[- ]?build|checklist/.test(heading)) {
+      if (/manual\s*steps|post[- ]?build|checklist|distribution|deployment|installation|getting\s*started|publishing/.test(heading)) {
         capturing = true;
         continue;
       }
@@ -184,8 +219,66 @@ function extractManualSteps(blueprint) {
   return items;
 }
 
+// snapshotGroundupDir / restoreGroundupDir — belt-and-suspenders protection
+// for .groundup/ during agent dispatch. The phase prompt tells the AI not to
+// touch .groundup/, but we can't trust that. Scaffold tools (vite --overwrite,
+// create-next-app, etc.) routinely nuke the working directory and recreate it,
+// destroying session.json in the process. A future contributor will look at
+// this and wonder why it exists when the AI is supposed to stay away from
+// .groundup/. The answer: it doesn't. Vite's --overwrite flag wiped
+// .groundup/ on a real E2E run (gts-web-e2e, 2026-04-17, phase 1).
+// Without this backup, the build loop crashes at saveBuildState because
+// loadSession() returns null.
+function snapshotGroundupDir(projectRoot, phaseIndex) {
+  const groundupDir = path.join(projectRoot, '.groundup');
+  if (!fs.existsSync(groundupDir)) return null;
+
+  const backupDir = path.join(os.tmpdir(), `groundup-backup-${process.pid}-${phaseIndex}`);
+  fs.cpSync(groundupDir, backupDir, { recursive: true });
+  return backupDir;
+}
+
+function restoreGroundupDir(projectRoot, backupDir) {
+  if (!backupDir || !fs.existsSync(backupDir)) return false;
+
+  const groundupDir = path.join(projectRoot, '.groundup');
+  const sessionPath = path.join(groundupDir, 'session.json');
+
+  // Only restore if .groundup/ or session.json was destroyed
+  if (fs.existsSync(sessionPath)) {
+    // .groundup/ survived — clean up backup
+    fs.rmSync(backupDir, { recursive: true, force: true });
+    return false;
+  }
+
+  // Restore from backup
+  if (!fs.existsSync(groundupDir)) {
+    fs.mkdirSync(groundupDir, { recursive: true });
+  }
+  fs.cpSync(backupDir, groundupDir, { recursive: true });
+  fs.rmSync(backupDir, { recursive: true, force: true });
+  return true;
+}
+
+function cleanupBackup(backupDir) {
+  if (backupDir && fs.existsSync(backupDir)) {
+    fs.rmSync(backupDir, { recursive: true, force: true });
+  }
+}
+
 function saveBuildState(projectRoot, updates) {
   const session = loadSession(projectRoot);
+  if (!session) {
+    // Session was destroyed — likely by a scaffold tool that wiped .groundup/.
+    // The backup/restore logic should have caught this, but if we get here
+    // anyway, fail loud with a human-readable message instead of a raw
+    // TypeError. Don't silently create a new session — that would lose all
+    // phase progress, provider config, and interview history.
+    console.log(amber('■ ') + white('Session state missing — .groundup/session.json was destroyed.'));
+    console.log(muted('  This usually means a scaffold command wiped the .groundup/ directory.'));
+    console.log(muted('  Run ') + amber('groundup continue') + muted(' — we may be able to recover.'));
+    return;
+  }
   const currentBuild = session.build || {};
   updateSession({
     ...session,
@@ -306,7 +399,10 @@ export async function runBuild({ projectRoot }) {
       const beforeSha = gitHeadSha(projectRoot);
       snapshots[i] = beforeSha;
 
-      // Dispatch to agent — spinner while launching, then agent owns the terminal
+      // Snapshot .groundup/ before dispatch — scaffold tools can destroy it
+      const backupDir = snapshotGroundupDir(projectRoot, i);
+
+      // Dispatch to agent — spinner runs until agent produces first output
       sep();
       console.log(amber('■ ') + white(`Dispatching to ${agentLabel}`));
       sep();
@@ -314,16 +410,34 @@ export async function runBuild({ projectRoot }) {
 
       const spinFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
       let spinIdx = 0;
+      let spinnerActive = true;
       const spinner = setInterval(() => {
-        process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        if (spinnerActive) {
+          process.stdout.write(`\r  ${amber(spinFrames[spinIdx++ % spinFrames.length])} ${muted(`launching ${agentLabel}...`)}`);
+        }
       }, 80);
 
-      // Small delay so spinner is visible before agent takes over stdio
-      await new Promise((r) => setTimeout(r, 400));
-      clearInterval(spinner);
-      process.stdout.write('\r\x1B[2K');
+      const clearSpinner = () => {
+        if (!spinnerActive) return;
+        spinnerActive = false;
+        clearInterval(spinner);
+        process.stdout.write('\r\x1B[2K');
+      };
 
-      const result = await agent.dispatch(promptPath, projectRoot);
+      const result = await agent.dispatch(promptPath, projectRoot, {
+        onFirstOutput: clearSpinner,
+      });
+
+      // Ensure spinner is cleared if agent exited without output
+      clearSpinner();
+
+      // Restore .groundup/ if the agent destroyed it
+      const restored = restoreGroundupDir(projectRoot, backupDir);
+      if (restored) {
+        console.log(muted('  .groundup/ was restored from backup (agent or scaffold wiped it)'));
+      } else {
+        cleanupBackup(backupDir);
+      }
 
       line();
       sep();
@@ -384,6 +498,24 @@ export async function runBuild({ projectRoot }) {
 
       if (choice === 'approve') {
         line();
+
+        // Commit phase work
+        const committed = gitCommitPhase(projectRoot, phase);
+        if (committed) {
+          console.log(muted(`  Committed: phase ${phase.number}: ${phase.title}`));
+          const pushResult = gitPush(projectRoot);
+          if (pushResult.ok) {
+            console.log(muted('  Pushed to origin/develop'));
+          } else {
+            console.log(amber('■ ') + white('Push failed — you can push manually later'));
+            if (pushResult.sha) console.log(muted(`  HEAD is at ${pushResult.sha}`));
+            if (pushResult.error) console.log(muted(`  ${pushResult.error}`));
+          }
+        } else {
+          console.log(muted('  Nothing to commit for this phase'));
+        }
+
+        line();
         sep();
         console.log(amber('■ ') + white(`Phase ${phase.number} approved`));
         sep();
@@ -400,6 +532,17 @@ export async function runBuild({ projectRoot }) {
       }
 
       if (choice === 'retry') {
+        // Reset to pre-phase state so the agent starts clean
+        const resetSha = snapshots[i];
+        if (resetSha) {
+          const didReset = gitResetHard(projectRoot, resetSha);
+          if (didReset) {
+            console.log(muted(`  Reset to pre-phase state (${resetSha.slice(0, 7)})`));
+          } else {
+            console.log(amber('■ ') + white('Could not reset — agent will retry on current state'));
+          }
+        }
+
         feedback = await askText(
           'What should be different?',
           'e.g. "the auth middleware is missing error handling"',
@@ -424,67 +567,61 @@ export async function runBuild({ projectRoot }) {
 
   // --- All phases complete ---
 
-  // Post-build checklist
-  const manualSteps = extractManualSteps(blueprint);
-  if (manualSteps.length > 0) {
-    sep();
-    console.log(amber('■ ') + white('Post-build checklist'));
-    sep();
-    line();
-
-    for (const step of manualSteps) {
-      const marker = step.done ? success('  ■') : amber('  □');
-      console.log(marker + ' ' + white(step.text));
-    }
-    line();
-  }
-
   // All phases complete header
   sep();
   console.log(amber('■ ') + white('All phases complete'));
   sep();
   line();
 
-  // --- Teardown ---
-  console.log(white('Remove .groundup/ project files?'));
+  // --- Squash option ---
+  const currentSession = loadSession(projectRoot);
+  const scaffoldSha = currentSession?.build?.scaffoldSha;
+  if (scaffoldSha) {
+    const purpose = currentSession?.interview?.purpose || 'new project';
+    console.log(white('Squash all phase commits into one?'));
+    console.log(muted('  Replaces per-phase commits with a single clean commit.'));
+    line();
 
-  const teardownChoice = await askSelect(
-    '',
-    [
-      { value: 'yes', label: 'Yes — clean up' },
-      { value: 'no', label: 'No — keep them' },
-    ],
-    'no'
-  );
+    const squashChoice = await askSelect(
+      '',
+      [
+        { value: 'no', label: 'No — keep per-phase commits', hint: 'recommended' },
+        { value: 'yes', label: 'Yes — squash into one commit' },
+      ],
+      'no'
+    );
 
-  // Mark complete before potential removal
-  saveBuildState(projectRoot, { status: 'complete' });
-
-  line();
-
-  const groundupDir = path.join(projectRoot, '.groundup');
-  if (teardownChoice === 'yes') {
-    fs.rmSync(groundupDir, { recursive: true, force: true });
-    console.log(muted('── .groundup/ removed ──'));
-  } else {
-    console.log(muted('── .groundup/ kept at .groundup/ ──'));
+    if (squashChoice === 'yes') {
+      line();
+      const squashMsg = `built with groundup — ${purpose}`;
+      try {
+        execSync(`git reset --soft ${scaffoldSha}`, { cwd: projectRoot, encoding: 'utf-8' });
+        execSync('git add -A', { cwd: projectRoot, encoding: 'utf-8' });
+        spawnSync('git', ['commit', '-m', squashMsg], { cwd: projectRoot, encoding: 'utf-8' });
+        console.log(muted(`  Squashed to: ${squashMsg}`));
+        try {
+          const pushRes = spawnSync('git', ['push', '--force-with-lease', 'origin', 'develop'], { cwd: projectRoot, encoding: 'utf-8' });
+          if (pushRes.status !== 0) throw new Error((pushRes.stderr || '').trim());
+          console.log(muted('  Force-pushed to origin/develop'));
+        } catch (pushErr) {
+          const sha = gitHeadSha(projectRoot);
+          console.log(amber('■ ') + white('Push failed — you can push manually'));
+          if (sha) console.log(muted(`  HEAD is at ${sha}`));
+        }
+      } catch (squashErr) {
+        console.log(amber('■ ') + white('Squash failed — per-phase commits preserved'));
+        console.log(muted(`  ${squashErr.message || squashErr}`));
+      }
+      line();
+    } else {
+      line();
+    }
   }
 
-  line();
-
-  // --- Done screen ---
-  const cols = process.stdout.columns || 80;
-  const tagline = 'happy building. ⚒️';
-  const pad = Math.max(0, Math.floor((cols - tagline.length) / 2));
-
-  console.log(amber('━'.repeat(cols)));
-  console.log(' '.repeat(pad) + amber(tagline));
-  console.log(amber('━'.repeat(cols)));
-  line();
-  console.log(muted(`  your project is at ${projectRoot}`));
-  console.log(muted('  push to main when you\'re ready to ship'));
-  console.log(muted('═'.repeat(cols)));
-  line();
+  // Mark build complete. Teardown and done screen are handled by the caller
+  // (dig.js / continue.js) after the deploy stage runs — .groundup/ must
+  // survive until deploy reads BLUEPRINT.md for the target.
+  saveBuildState(projectRoot, { status: 'complete' });
 
   return { completed: true };
 }
