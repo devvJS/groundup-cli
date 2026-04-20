@@ -173,7 +173,7 @@ function handleSuccess(result, target, provider, projectRoot) {
     if (!health.ok) {
       line();
       console.log(warning('■ ') + white(`deployed, but ${url} returned ${health.status}`));
-      console.log(muted('  your deployment may have built empty — check vercel.com/dashboard'));
+      console.log(muted('  ' + healthHint(health.status)));
     }
   }
 
@@ -195,6 +195,19 @@ function checkDeployHealth(url) {
     return { ok: false, status: 'timeout' };
   }
 }
+
+
+// Status-specific hints for post-deploy health check warnings. Keyed by HTTP
+// status code; unlisted codes fall through to the generic hint.
+const HEALTH_HINTS = {
+  401: 'this usually means Vercel Deployment Protection is enabled. check your project\'s deployment protection settings to allow public access.',
+};
+
+function healthHint(status) {
+  return HEALTH_HINTS[status]
+    || 'your deployment returned a non-200 — check vercel.com/dashboard';
+}
+
 
 function buildFallthrough(target, projectRoot, overrideHint) {
   const targetLower = target.toLowerCase();
