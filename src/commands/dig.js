@@ -12,7 +12,7 @@ import { runDeploy } from './deploy.js';
 import { renderRepoFailure } from '../ui/repo-failure.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
-import { runAIInterview, createActivityLog } from '../ai/interview.js';
+import { runAIInterview, createActivityLog, INTERVIEW_REQUIREMENTS } from '../ai/interview.js';
 import { get as getKey, set as setKey, PROVIDER_TO_AGENT, AGENT_LABELS } from '../ai/config.js';
 import { isInstalled as claudeCodeInstalled } from '../ai/providers/claudecode.js';
 import { MODELS, PROVIDER_LABELS, modelsForPhase, recommendedFor } from '../ai/models.js';
@@ -85,6 +85,33 @@ async function runFsStep(log, inProgressLabel, finishedLabel, value, fn) {
   if (log) log.finishTask(finishedLabel, value);
 }
 
+// All platform-specific section titles in the blueprint template. Used by
+// stripNonMatchingSections to remove sections that don't apply.
+const ALL_SECTION_TITLES = ['Design', 'CLI UX', 'API Shape'];
+
+// Remove blueprint sections whose title doesn't match the current platform's
+// requirements. Keeps only the section matching the platform, or none if the
+// platform has no requirements entry.
+function stripNonMatchingSections(content, platform) {
+  const req = INTERVIEW_REQUIREMENTS[platform];
+  const keepTitle = req?.sectionTitle ?? null;
+  const titlesToRemove = ALL_SECTION_TITLES.filter((t) => t !== keepTitle);
+
+  let result = content;
+  for (const title of titlesToRemove) {
+    // Match ### Title through all its bullet lines. The \\*\\* escapes the
+    // markdown bold markers (literal ** in the template).
+    const pattern = new RegExp(
+      `### ${title}\\n(?:- \\*\\*[^\\n]*\\n)*\\n?`,
+      'g'
+    );
+    result = result.replace(pattern, '');
+  }
+  // Clean up any resulting double blank lines
+  result = result.replace(/\n{3,}/g, '\n\n');
+  return result;
+}
+
 async function installGroundupDir(projectDir, projectName, purpose, platform, log = null) {
   const groundupDir = path.join(projectDir, '.groundup');
   if (!fs.existsSync(groundupDir)) {
@@ -110,12 +137,19 @@ async function installGroundupDir(projectDir, projectName, purpose, platform, lo
       // Next.js or Express-on-serverless shape. The AI interview can still
       // course-correct if the user signals a different target mid-interview.
       const deployTarget = PLATFORM_DEPLOY_DEFAULTS[platform] ?? 'none';
-      const filled = fs
+      let filled = fs
         .readFileSync(blueprintSrc, 'utf-8')
         .replace('[project-name]', projectName)
         .replace('[purpose — one sentence, filled from seed question 1]', purpose)
         .replace('[filled from seed question 2]', platformLabel)
         .replace('[deploy-target]', deployTarget);
+
+      // Strip platform sections that don't match. The template contains all
+      // three (### Design, ### CLI UX, ### API Shape). Keep only the one whose
+      // title matches INTERVIEW_REQUIREMENTS[platform].sectionTitle, or none
+      // if the platform has no requirements (desktop, library, other).
+      filled = stripNonMatchingSections(filled, platform);
+
       fs.writeFileSync(blueprintDest, filled);
     });
   }

@@ -52,11 +52,36 @@ OPTIONS_EXPLAINED:
 RECOMMENDATION: [option name] — [one sentence why for this project]`;
 
 function systemPrompt(seedAnswers, blueprint) {
+  const platform = seedAnswers.platform;
+  const req = INTERVIEW_REQUIREMENTS[platform];
+
+  // Compose the REQUIRED COVERAGE block from the config + guidance map.
+  // Platforms without requirements (desktop, library, other) get no block.
+  let requiredCoverageBlock = '';
+  if (req) {
+    const dimList = req.dimensions
+      .map((d) => DIMENSION_LABELS[d] || d)
+      .join(', ');
+    const guidance = PLATFORM_GUIDANCE[platform] || '';
+    requiredCoverageBlock = `
+REQUIRED COVERAGE
+The blueprint has a ### ${req.sectionTitle} section. You MUST cover every dimension listed below before declaring INTERVIEW_COMPLETE. These are mandatory — the interview cannot complete without them.
+
+Required dimensions for this project: ${dimList}
+
+You choose the wording, ordering, and depth. Ask them when they make sense in the conversation — don't front-load them all at the start. But do NOT skip them, and do NOT declare INTERVIEW_COMPLETE until the blueprint's ### ${req.sectionTitle} section has a real value (not a placeholder) for every dimension.
+
+Do NOT assume anything the developer hasn't specified. If the developer says "up to you" or "surprise me," ask one follow-up for preference before accepting that answer. groundup's posture is that user intent drives structure and design, not AI taste.
+
+${guidance}
+`;
+  }
+
   return `You are groundup — an AI agent running an adaptive interview with a developer to produce a complete project blueprint.
 
 SEED ANSWERS
 - Purpose: ${seedAnswers.purpose}
-- Platform: ${seedAnswers.platform}
+- Platform: ${platform}
 
 CURRENT BLUEPRINT
 \`\`\`
@@ -75,7 +100,7 @@ The blueprint has a ### Deployment section. How you handle it depends on the pla
 - mobile, cli, desktop, library: The deploy target is "none". Do NOT ask about deployment — these platforms distribute through other channels (app stores, npm, packaged binaries). Leave the section as-is.
 
 If at any point the developer's answers suggest a different deploy target than the default (e.g. they mention Docker, AWS, or self-hosting for an api project), update the ### Deployment section accordingly. The interview can always course-correct.
-
+${requiredCoverageBlock}
 DEVELOPER EXPERIENCE ASSESSMENT
 Early in the interview (within the first 2–3 questions), assess the developer's experience level. Ask something like:
 
@@ -214,6 +239,9 @@ const TOPIC_LIST = [
   'file storage',
   'compliance',
   'deployment',
+  'design',
+  'cli ux',
+  'api shape',
   'timeline',
 ];
 
@@ -229,8 +257,102 @@ const TOPIC_KEYWORDS = {
   'file storage': ['file upload', 'upload', 'media', 'image', 's3', 'blob'],
   'compliance': ['compliance', 'gdpr', 'hipaa', 'pci', 'privacy', 'audit'],
   'deployment': ['deploy', 'hosting', 'vercel', 'netlify', 'aws', 'docker', 'render'],
+  'design': ['palette', 'typography', 'visual direction', 'component library', 'color scheme', 'font', 'tailwind', 'shadcn'],
+  'cli ux': ['color palette', 'error format', 'output density', 'no_color', '--verbose', '--quiet'],
+  'api shape': ['api style', 'rest', 'graphql', 'trpc', 'error envelope', 'auth model', 'bearer token'],
   'timeline': ['timeline', 'deadline', 'launch', 'ship date', 'when do you'],
 };
+
+// --- mandatory coverage config -----------------------------------------------
+// Keyed by platform. Validation and re-entry code reads this — no per-platform
+// branching elsewhere. Each entry defines the blueprint section the AI must
+// populate and the dimensions that must be covered before the interview can
+// complete.
+
+export const INTERVIEW_REQUIREMENTS = {
+  web: {
+    sectionTitle: 'Design',
+    dimensions: ['palette', 'typography', 'visual-direction', 'component-library'],
+  },
+  mobile: {
+    sectionTitle: 'Design',
+    dimensions: ['palette', 'typography', 'visual-direction', 'component-library'],
+  },
+  cli: {
+    sectionTitle: 'CLI UX',
+    dimensions: ['color-palette', 'error-formatting', 'output-density'],
+  },
+  api: {
+    sectionTitle: 'API Shape',
+    dimensions: ['api-style', 'error-envelope', 'auth-model'],
+  },
+};
+
+// Maps dimension slugs to the bold label used in the blueprint section.
+// Coverage detection checks whether the placeholder has been replaced.
+const DIMENSION_LABELS = {
+  'palette':           'Palette',
+  'typography':        'Typography',
+  'visual-direction':  'Visual direction',
+  'component-library': 'Component library',
+  'color-palette':     'Color palette',
+  'error-formatting':  'Error formatting',
+  'output-density':    'Output density',
+  'api-style':         'API style',
+  'error-envelope':    'Error envelope',
+  'auth-model':        'Auth model',
+};
+
+// Per-platform guidance prose appended to the system prompt's REQUIRED COVERAGE
+// block. Tells the AI HOW to ask about each dimension — wording, ordering, and
+// depth are the AI's call, but these guardrails keep the questions useful.
+const PLATFORM_GUIDANCE = {
+  web: `Web / mobile design dimensions:
+- Palette: ask if they have colors in mind, want suggestions based on their visual direction, or have a brand to match.
+- Typography: ask for preference (serif, sans-serif, display, monospace) and specific fonts if any.
+- Visual direction: open-ended — minimalist, brutalist, playful, corporate, warm, etc. Let the developer describe the feel.
+- Component library: ask by CATEGORY (headless/unstyled, full-featured, custom, none), not by specific package. The developer can name a package in freeform if they want.`,
+
+  mobile: `Web / mobile design dimensions:
+- Palette: ask if they have colors in mind, want suggestions based on their visual direction, or have a brand to match.
+- Typography: ask for preference (serif, sans-serif, display, monospace) and specific fonts if any.
+- Visual direction: open-ended — minimalist, brutalist, playful, corporate, warm, etc. Let the developer describe the feel.
+- Component library: ask by CATEGORY (headless/unstyled, full-featured, custom, none), not by specific package. The developer can name a package in freeform if they want.`,
+
+  cli: `CLI UX dimensions:
+- Color palette: ask if they want color at all, any primary accent color, and whether to respect the NO_COLOR env var.
+- Error formatting: verbose traceback, concise with hints, or minimal. How should exit codes be surfaced.
+- Output density: default-verbose or default-terse, whether --quiet and --verbose flags should exist.`,
+
+  api: `API shape dimensions:
+- API style: REST, GraphQL, tRPC, or something else.
+- Error envelope: shape of error responses (e.g., { error: string }, { code, message, details }, RFC 7807 problem+json).
+- Auth model: session cookies, bearer tokens, API keys, OAuth, none.`,
+};
+
+// Check the blueprint for uncovered dimensions. Returns the list of dimension
+// slugs whose placeholder ("[filled during interview]") has NOT been replaced.
+// Platform-agnostic — reads from INTERVIEW_REQUIREMENTS.
+export function uncoveredDimensions(blueprintContent, platform) {
+  const req = INTERVIEW_REQUIREMENTS[platform];
+  if (!req) return [];
+  const missing = [];
+  for (const dim of req.dimensions) {
+    const label = DIMENSION_LABELS[dim] || dim;
+    // Match the bold label line and check if the value is still a placeholder
+    const pattern = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.*)`, 'i');
+    const match = blueprintContent.match(pattern);
+    if (!match || !match[1].trim() || /\[filled during interview\]/i.test(match[1])) {
+      missing.push(dim);
+    }
+  }
+  return missing;
+}
+
+// Human-readable list of missing dimensions for the re-entry message.
+function formatMissing(dims) {
+  return dims.map((d) => DIMENSION_LABELS[d] || d).join(', ');
+}
 
 export function remainingTopics(history) {
   const haystack = history
@@ -875,6 +997,7 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
     blueprintLocked = false;
     const messages = [];
     const history = [];
+    let consecutiveIncompleteCompletions = 0;
 
     if (resumeHistory && resumeHistory.length > 0) {
       messages.push({ role: 'user', content: buildResumeMessage(resumeHistory) });
@@ -920,8 +1043,35 @@ export async function runAIInterview(seedAnswers, providerName, projectDir, prio
       const parsed = parseResponse(response);
 
       if (parsed.type === 'complete') {
-        blueprintLocked = true;
         messages.push({ role: 'assistant', content: response });
+
+        // --- mandatory coverage validation ---
+        // Platform-agnostic: check whether all required dimensions have been
+        // populated in the blueprint. If any are still placeholders, re-enter
+        // the interview with a targeted instruction. Hard cap: accept after
+        // two consecutive incomplete completions to avoid looping forever.
+        const missing = uncoveredDimensions(readBlueprint(projectDir), seedAnswers.platform);
+        if (missing.length > 0 && consecutiveIncompleteCompletions < 2) {
+          consecutiveIncompleteCompletions++;
+          const missingList = formatMissing(missing);
+          console.log(warning('■ ') + muted(`re-entering interview — missing: ${missingList}`));
+          messages.push({
+            role: 'user',
+            content: `Before we wrap up, we still need to cover: ${missingList}. These are required for the blueprint. Ask about them now — one at a time.`,
+          });
+          indicator = startThinking({
+            providerName,
+            pool: INTERVIEW_THINKING_MESSAGES,
+            activityLog,
+            topicsRemaining: remainingTopics(history),
+          });
+          continue;
+        }
+        if (missing.length > 0) {
+          // Hard cap hit — accept with warning
+          console.log(warning('■ ') + muted(`accepting interview with uncovered dimensions: ${formatMissing(missing)}`));
+        }
+        blueprintLocked = true;
         break;
       }
 
