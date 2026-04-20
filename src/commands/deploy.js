@@ -91,7 +91,8 @@ export async function runDeploy({ projectRoot }) {
     console.log(amber('■ ') + white(`${target} CLI not found on PATH.`));
     console.log(muted(`  Install it and run `) + amber('groundup deploy') + muted(' to try again.'));
     line();
-    return buildFallthrough(target, projectRoot);
+    return buildFallthrough(target, projectRoot,
+      `${target} CLI not found. install it and run \`groundup deploy\` to try again.`);
   }
 
   // Gate: "ship it now?"
@@ -119,7 +120,7 @@ export async function runDeploy({ projectRoot }) {
   if (!preflightResult.ready) {
     console.log(amber('■ ') + white(preflightResult.error));
     line();
-    return buildFallthrough(target, projectRoot);
+    return buildFallthrough(target, projectRoot, preflightResult.error);
   }
   if (preflightResult.hint?.wrote) {
     console.log(muted(`  wrote vercel.json (framework: ${preflightResult.hint.framework})`));
@@ -195,6 +196,7 @@ function checkDeployHealth(url) {
   }
 }
 
+
 // Status-specific hints for post-deploy health check warnings. Keyed by HTTP
 // status code; unlisted codes fall through to the generic hint.
 const HEALTH_HINTS = {
@@ -206,12 +208,13 @@ function healthHint(status) {
     || 'your deployment returned a non-200 — check vercel.com/dashboard';
 }
 
-function buildFallthrough(target, projectRoot) {
+
+function buildFallthrough(target, projectRoot, overrideHint) {
   const targetLower = target.toLowerCase();
-  const hints = {
+  const defaultHints = {
     vercel: 'run `vercel --prod` from the project directory',
   };
-  const hint = hints[targetLower] || `deploy to ${target} manually`;
+  const hint = overrideHint || defaultHints[targetLower] || `deploy to ${target} manually`;
 
   saveDeployState(projectRoot, { status: 'fallthrough' });
   return {

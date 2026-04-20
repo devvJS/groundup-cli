@@ -9,6 +9,7 @@ import { runRepoSetup } from './repo.js';
 import { generateWorkflow } from './workflow.js';
 import { runBuild } from './build.js';
 import { runDeploy } from './deploy.js';
+import { renderRepoFailure } from '../ui/repo-failure.js';
 import { resume } from './continue.js';
 import { askSelect, askMultiselect, askText } from '../ui/input.js';
 import { runAIInterview, createActivityLog } from '../ai/interview.js';
@@ -546,7 +547,11 @@ export async function runSeedToInterview(projectName, projectDir, prefill = {}, 
   updateSession({ ...loadSession(), phase: 'repo' });
 
   // --- phase: repo setup ---
-  await runRepoSetup(projectDir);
+  const repoResult = await runRepoSetup(projectDir);
+  if (!repoResult?.ok) {
+    renderRepoFailure(repoResult);
+    return;
+  }
 
   // --- phase: workflow generation ---
   line();
