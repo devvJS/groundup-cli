@@ -306,18 +306,15 @@ const DIMENSION_LABELS = {
 // Per-platform guidance prose appended to the system prompt's REQUIRED COVERAGE
 // block. Tells the AI HOW to ask about each dimension — wording, ordering, and
 // depth are the AI's call, but these guardrails keep the questions useful.
-const PLATFORM_GUIDANCE = {
-  web: `Web / mobile design dimensions:
+const WEB_MOBILE_GUIDANCE = `Design dimensions:
 - Palette: ask if they have colors in mind, want suggestions based on their visual direction, or have a brand to match.
 - Typography: ask for preference (serif, sans-serif, display, monospace) and specific fonts if any.
 - Visual direction: open-ended — minimalist, brutalist, playful, corporate, warm, etc. Let the developer describe the feel.
-- Component library: ask by CATEGORY (headless/unstyled, full-featured, custom, none), not by specific package. The developer can name a package in freeform if they want.`,
+- Component library: ask by CATEGORY (headless/unstyled, full-featured, custom, none), not by specific package. The developer can name a package in freeform if they want.`;
 
-  mobile: `Web / mobile design dimensions:
-- Palette: ask if they have colors in mind, want suggestions based on their visual direction, or have a brand to match.
-- Typography: ask for preference (serif, sans-serif, display, monospace) and specific fonts if any.
-- Visual direction: open-ended — minimalist, brutalist, playful, corporate, warm, etc. Let the developer describe the feel.
-- Component library: ask by CATEGORY (headless/unstyled, full-featured, custom, none), not by specific package. The developer can name a package in freeform if they want.`,
+const PLATFORM_GUIDANCE = {
+  web: WEB_MOBILE_GUIDANCE,
+  mobile: WEB_MOBILE_GUIDANCE,
 
   cli: `CLI UX dimensions:
 - Color palette: ask if they want color at all, any primary accent color, and whether to respect the NO_COLOR env var.
